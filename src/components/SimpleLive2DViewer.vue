@@ -18,6 +18,8 @@ const currentResponse = ref('')
 const showBubble = ref(false)
 const bubbleContent = ref('')
 const bubbleTimeout = ref<NodeJS.Timeout | null>(null)
+const bubblePositionX = ref(0)
+const bubblePositionY = ref(0)
 
 // 说话动画相关状态
 const isSpeaking = ref(false)
@@ -346,6 +348,7 @@ async function sendMessage() {
         currentResponse.value += token
         showBubble.value = true
         bubbleContent.value = currentResponse.value
+        updateBubblePosition() // 每次更新内容时也更新气泡位置
 
         // 开始说话动画
         if (!isSpeaking.value) {
@@ -355,6 +358,7 @@ async function sendMessage() {
       onComplete: (fullContent: string) => {
         isTyping.value = false
         bubbleContent.value = fullContent
+        updateBubblePosition() // 完成时更新气泡位置
 
         // 停止说话动画
         stopSpeaking()
@@ -395,6 +399,7 @@ async function sendMessage() {
 function showTemporaryBubble(content: string, duration: number = 3000) {
   bubbleContent.value = content
   showBubble.value = true
+  updateBubblePosition() // 更新气泡位置
   if (bubbleTimeout.value) {
     clearTimeout(bubbleTimeout.value)
   }
@@ -574,6 +579,69 @@ function handleKeyDown(event: KeyboardEvent) {
 if (typeof globalThis !== 'undefined') {
   (globalThis as any).setGazeTarget = setGazeTarget;
   (globalThis as any).clearGazeTarget = clearGazeTarget
+}
+
+// 获取角色头顶的屏幕坐标
+function getCharacterTopPosition(): { x: number, y: number } {
+  if (!model || !app) {
+    // 默认回退位置：canvas中心顶部
+    return {
+      x: canvasX.value + (canvasWidth.value * canvasScale.value) / 2,
+      y: canvasY.value,
+    }
+  }
+
+  try {
+    // 使用Live2D模型的getBounds()方法获取准确的边界信息
+    const bounds = model.getBounds()
+    console.log('Model bounds:', bounds)
+
+    // bounds包含了模型的实际渲染边界
+    // bounds.x, bounds.y 是边界框左上角的世界坐标
+    // bounds.width, bounds.height 是边界框的尺寸
+
+    // 计算模型头顶在世界坐标系中的位置
+    const modelTopWorldX = bounds.x + bounds.width / 2 // 中心X坐标
+    const modelTopWorldY = bounds.y // 顶部Y坐标
+
+    // 将世界坐标转换为屏幕坐标
+    // 需要考虑canvas的位置和缩放
+    const screenCenterX = canvasX.value + modelTopWorldX
+    const screenTop = canvasY.value + modelTopWorldY
+
+    console.log(`Model bounds: x=${bounds.x}, y=${bounds.y}, width=${bounds.width}, height=${bounds.height}`)
+    console.log(`Model top world coords: (${modelTopWorldX}, ${modelTopWorldY})`)
+    console.log(`Model top screen coords: (${screenCenterX}, ${screenTop})`)
+
+    return {
+      x: screenCenterX,
+      y: screenTop,
+    }
+  }
+  catch (error) {
+    console.log('Error getting character top position:', error)
+    // 回退到默认位置：使用模型的基本属性估算
+    const modelCenterX = canvasX.value + model.x
+    const modelTop = canvasY.value + model.y - (model.height * model.scale.y) / 2
+
+    console.log(`Fallback calculation: center=(${modelCenterX}, ${modelTop})`)
+
+    return {
+      x: modelCenterX,
+      y: modelTop,
+    }
+  }
+}
+
+// 更新气泡位置
+function updateBubblePosition() {
+  const characterTop = getCharacterTopPosition()
+  bubblePositionX.value = characterTop.x
+  // 气泡位置定位到角色头顶，通过CSS的transform: translate(-50%, -100%)实现底部对齐
+  // 这样气泡的底部会与角色头顶对齐，并且会有一点间距（通过CSS或这里微调）
+  bubblePositionY.value = characterTop.y
+
+  console.log(`Bubble position updated: (${bubblePositionX.value}, ${bubblePositionY.value})`)
 }
 
 // 计算输入框基于模型的位置
@@ -1089,6 +1157,8 @@ onMounted(async () => {
 
     // 启动目光追踪更新循环
     app.ticker.add(updateGazeParameters)
+    // 启动气泡位置更新循环
+    app.ticker.add(updateBubblePosition)
 
     // 计算并设置输入框位置
     calculateInputPosition()
@@ -1116,6 +1186,7 @@ onUnmounted(() => {
   // 清理ticker
   if (app) {
     app.ticker.remove(updateGazeParameters)
+    app.ticker.remove(updateBubblePosition)
   }
   // 清理全局函数和变量
   if (typeof globalThis !== 'undefined') {
@@ -1191,9 +1262,9 @@ onUnmounted(() => {
       v-if="showBubble"
       class="chat-bubble"
       :style="{
-        left: `${canvasX + (canvasWidth * canvasScale) / 2}px`,
-        bottom: `${windowHeight - canvasY - 80}px`,
-        transform: 'translateX(-50%)',
+        left: `${bubblePositionX}px`,
+        top: `${bubblePositionY}px`,
+        transform: 'translate(-50%, -100%)',
       }"
     >
       <div class="bubble-content">
