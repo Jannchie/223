@@ -98,7 +98,7 @@ function handleMouseDown(event: MouseEvent) {
     event.preventDefault()
     event.stopPropagation()
   }
-  else {}
+  else { /* empty */ }
 }
 
 // 鼠标释放事件处理

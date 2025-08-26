@@ -16,7 +16,7 @@ export default defineConfig({
       preload: {
         // Shortcut of `build.rollupOptions.input`.
         // Preload scripts may contain Web assets, so use the `build.rollupOptions.input` instead `build.lib.entry`.
-        input: path.join(__dirname, 'electron/preload.ts'),
+        input: path.join(import.meta.dirname, 'electron/preload.ts'),
         vite: {
           build: {
             rollupOptions: {
@@ -30,6 +30,7 @@ export default defineConfig({
       // Ployfill the Electron and Node.js API for Renderer process.
       // If you want use Node.js in Renderer process, the `nodeIntegration` needs to be enabled in the Main process.
       // See 👉 https://github.com/electron-vite/vite-plugin-electron-renderer
+      // eslint-disable-next-line node/prefer-global/process
       renderer: process.env.NODE_ENV === 'test'
         // https://github.com/electron-vite/vite-plugin-electron-renderer/issues/78#issuecomment-2053600808
         ? undefined
@@ -41,7 +42,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      url: path.resolve(__dirname, 'src/utils/url-polyfill.js'),
+      url: path.resolve(import.meta.dirname, 'src/utils/url-polyfill.js'),
       path: 'path-browserify',
     },
   },

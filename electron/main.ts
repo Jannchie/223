@@ -1,3 +1,4 @@
+/* eslint-disable node/prefer-global/process */
 import fs from 'node:fs'
 import path from 'node:path'
 // import { createRequire } from 'node:module'
@@ -109,6 +110,7 @@ app.on('activate', () => {
 // Disable hardware acceleration for WSL compatibility
 app.disableHardwareAcceleration()
 
+// eslint-disable-next-line unicorn/prefer-top-level-await
 app.whenReady().then(() => {
   // 注册自定义协议来处理本地文件
   protocol.handle('app', (request) => {
