@@ -411,14 +411,6 @@ function updateGazeParameters() {
 
   // 只在有变化时才更新
   if (hasChanged) {
-    // 转换屏幕坐标为相对于 canvas 的坐标
-    const canvasRelativeX = targetScreenX - canvasX.value
-    const canvasRelativeY = targetScreenY - canvasY.value
-
-    // 考虑 canvas 的缩放
-    const actualCanvasWidth = canvasWidth.value * canvasScale.value
-    const actualCanvasHeight = canvasHeight.value * canvasScale.value
-
     // 尝试从 Live2D 模型中获取眼睛坐标
     let eyeScreenX = canvasX.value + (canvasWidth.value * canvasScale.value) / 2 // 默认位置
     let eyeScreenY = canvasY.value + (canvasHeight.value * canvasScale.value) * 0.35 // 默认位置
@@ -505,7 +497,7 @@ function updateGazeParameters() {
     const normalizedY = directionY / directionLength
 
     // 从眼睛位置沿着方向延伸1000px
-    const projectionDistance = 1600
+    const projectionDistance = 10_000
     const projectionScreenX = eyeScreenX + normalizedX * projectionDistance
     const projectionScreenY = eyeScreenY + normalizedY * projectionDistance
 
@@ -519,7 +511,7 @@ function updateGazeParameters() {
 
     // 使用 Live2D 内置的 focus 方法
     // instant: false 会让 Live2D 自己处理平滑插值
-    const instant = isInputFocused.value // 输入时即时响应，鼠标时平滑移动
+    const instant = false // 总是使用缓动效果，无论是鼠标还是输入框
     model.focus(modelX, modelY, instant)
 
     // 更新记录的值
@@ -533,14 +525,14 @@ function updateGazeParameters() {
       console.log(`  原始坐标: (${targetScreenX}, ${targetScreenY})`)
       console.log(`  眼睛位置: (${eyeScreenX.toFixed(1)}, ${eyeScreenY.toFixed(1)})`)
       console.log(`  投影坐标: (${projectionScreenX.toFixed(1)}, ${projectionScreenY.toFixed(1)})`)
-      console.log(`  模型坐标: (${modelX.toFixed(1)}, ${modelY.toFixed(1)}) - 即时响应`)
+      console.log(`  模型坐标: (${modelX.toFixed(1)}, ${modelY.toFixed(1)}) - 缓动移动`)
     }
     else if (sourceType === 'Electron鼠标') {
       console.log(`[updateGazeParameters] ${sourceType}目标变化:`)
       console.log(`  原始坐标: (${targetScreenX}, ${targetScreenY})`)
       console.log(`  眼睛位置: (${eyeScreenX.toFixed(1)}, ${eyeScreenY.toFixed(1)})`)
       console.log(`  投影坐标: (${projectionScreenX.toFixed(1)}, ${projectionScreenY.toFixed(1)})`)
-      console.log(`  模型坐标: (${modelX.toFixed(1)}, ${modelY.toFixed(1)}) - 平滑移动`)
+      console.log(`  模型坐标: (${modelX.toFixed(1)}, ${modelY.toFixed(1)}) - 缓动移动`)
     }
     // 本地鼠标移动太频繁，不输出日志
   }
