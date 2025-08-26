@@ -1,3 +1,4 @@
+<!-- eslint-disable no-console -->
 <script setup lang="ts">
 import { useLocalStorage } from '@vueuse/core'
 import { Live2DModel } from 'pixi-live2d-display-lipsyncpatch/cubism4'
@@ -9,6 +10,10 @@ const mouseX = ref(0)
 const mouseY = ref(0)
 let model: Live2DModel | null = null
 let app: Application | null = null
+
+// 目光追踪相关状态
+const gazeTargetX = ref<number | null>(null)
+const gazeTargetY = ref<number | null>(null)
 
 // 拖拽和缩放状态
 const isDragging = ref(false)
@@ -28,6 +33,104 @@ const canvasHeight = useLocalStorage('live2d-canvas-height', 1200)
 
 // 存储模型的基础缩放比例
 let baseModelScale = 1
+
+// 设置目光追踪目标的钩子函数
+function setGazeTarget(x: number, y: number) {
+  gazeTargetX.value = x
+  gazeTargetY.value = y
+}
+
+// 清除目光追踪目标，回到鼠标追踪模式
+function clearGazeTarget() {
+  gazeTargetX.value = null
+  gazeTargetY.value = null
+}
+
+// 将钩子函数暴露到全局
+if (typeof globalThis !== 'undefined') {
+  (globalThis as any).setGazeTarget = setGazeTarget;
+  (globalThis as any).clearGazeTarget = clearGazeTarget
+}
+
+// 将屏幕坐标转换为模型相对坐标系的函数
+function screenToModelCoords(screenX: number, screenY: number) {
+  if (!model || !app) {
+    return { x: 0, y: 0 }
+  }
+
+  // 计算相对于canvas的坐标
+  const canvasRelativeX = screenX - canvasX.value
+  const canvasRelativeY = screenY - canvasY.value
+
+  // 考虑canvas的缩放
+  const actualCanvasWidth = canvasWidth.value * canvasScale.value
+  const actualCanvasHeight = canvasHeight.value * canvasScale.value
+
+  // 归一化坐标 (-1 到 1)
+  const normalizedX = (canvasRelativeX / actualCanvasWidth) * 2 - 1
+  const normalizedY = (canvasRelativeY / actualCanvasHeight) * 2 - 1
+
+  return { x: normalizedX, y: normalizedY }
+}
+
+// 更新Live2D模型的眼球参数
+function updateGazeParameters() {
+  if (!model || !model.internalModel) {
+    return
+  }
+
+  let targetX = 0
+  let targetY = 0
+
+  // 如果设置了目标坐标，使用目标坐标；否则使用鼠标坐标
+  if (gazeTargetX.value !== null && gazeTargetY.value !== null) {
+    const coords = screenToModelCoords(gazeTargetX.value, gazeTargetY.value)
+    targetX = coords.x
+    targetY = coords.y
+  }
+  else {
+    // 使用鼠标位置
+    const coords = screenToModelCoords(mouseX.value, mouseY.value)
+    targetX = coords.x
+    targetY = coords.y
+  }
+
+  // 限制目光角度范围，防止眼球转动过度
+  const maxAngle = 30 // 最大角度（度数）
+  targetX = Math.max(-maxAngle, Math.min(maxAngle, targetX * maxAngle))
+  targetY = Math.max(-maxAngle, Math.min(maxAngle, -targetY * maxAngle)) // Y轴反转
+
+  // 设置Live2D眼球参数
+  try {
+    // 使用pixi-live2d-display的正确API
+    if (model.internalModel) {
+      const internalModel = model.internalModel as any
+      // 尝试不同的API调用方式
+      if (typeof internalModel.setParameterValueById === 'function') {
+        internalModel.setParameterValueById('ParamAngleX', targetX)
+        internalModel.setParameterValueById('ParamAngleY', targetY)
+        internalModel.setParameterValueById('ParamEyeLOpen', 1)
+        internalModel.setParameterValueById('ParamEyeROpen', 1)
+      }
+      else if (internalModel.coreModel && typeof internalModel.coreModel.setParameterValueById === 'function') {
+        internalModel.coreModel.setParameterValueById('ParamAngleX', targetX)
+        internalModel.coreModel.setParameterValueById('ParamAngleY', targetY)
+        internalModel.coreModel.setParameterValueById('ParamEyeLOpen', 1)
+        internalModel.coreModel.setParameterValueById('ParamEyeROpen', 1)
+      }
+      else {
+        // 打印可用的方法和属性，帮助调试
+        console.log('Available methods on internalModel:', Object.getOwnPropertyNames(internalModel))
+        if (internalModel.coreModel) {
+          console.log('Available methods on coreModel:', Object.getOwnPropertyNames(internalModel.coreModel))
+        }
+      }
+    }
+  }
+  catch (error) {
+    console.log('Error updating gaze parameters:', error)
+  }
+}
 
 // 更新canvas属性和位置
 function updateCanvasProperties() {
@@ -57,6 +160,10 @@ function updateCanvasProperties() {
 
 // 鼠标移动事件处理（主要用于拖拽）
 function handleMouseMove(event: MouseEvent) {
+  // 更新鼠标位置
+  mouseX.value = event.clientX
+  mouseY.value = event.clientY
+
   // 如果正在拖拽，更新canvas位置
   if (isDragging.value) {
     const deltaX = event.clientX - dragStartX.value
@@ -66,12 +173,7 @@ function handleMouseMove(event: MouseEvent) {
     canvasY.value = canvasStartY.value + deltaY
 
     updateCanvasProperties()
-
-    // 拖拽时也要更新鼠标位置，以便眼球追踪
-    mouseX.value = event.clientX
-    mouseY.value = event.clientY
   }
-  // 其他鼠标移动由全局处理器处理
 }
 
 // 检查点击是否在canvas区域内
@@ -232,6 +334,17 @@ onMounted(async () => {
 
     // 应用初始设置
     updateCanvasProperties()
+
+    // 启动眼球追踪更新循环
+    app.ticker.add(updateGazeParameters)
+
+    // 监听electron后端的全局鼠标位置
+    if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.onMousePosition) {
+      (globalThis as any).electronAPI.onMousePosition((position: { x: number, y: number }) => {
+        // 将electron上报的全局鼠标坐标设置为目光追踪目标
+        setGazeTarget(position.x, position.y)
+      })
+    }
   }
   catch {
     // 模型加载失败
@@ -242,6 +355,15 @@ onMounted(async () => {
 onUnmounted(() => {
   if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.removeMousePositionListener) {
     (globalThis as any).electronAPI.removeMousePositionListener()
+  }
+  // 清理ticker
+  if (app) {
+    app.ticker.remove(updateGazeParameters)
+  }
+  // 清理全局函数
+  if (typeof globalThis !== 'undefined') {
+    delete (globalThis as any).setGazeTarget
+    delete (globalThis as any).clearGazeTarget
   }
 })
 </script>

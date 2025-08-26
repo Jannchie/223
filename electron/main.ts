@@ -27,6 +27,7 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null
+let mouseTrackingInterval: NodeJS.Timeout | null = null
 
 app.commandLine.appendSwitch('--enable-unsafe-swiftshader')
 app.commandLine.appendSwitch('--ignore-gpu-blacklist')
@@ -87,12 +88,38 @@ function createWindow() {
       win?.webContents.openDevTools({ mode: 'detach' })
     }
   })
+
+  // 开始全局鼠标位置跟踪
+  startMouseTracking()
+}
+
+// 全局鼠标位置跟踪函数
+function startMouseTracking() {
+  if (mouseTrackingInterval) {
+    clearInterval(mouseTrackingInterval)
+  }
+
+  mouseTrackingInterval = setInterval(() => {
+    if (win && !win.isDestroyed()) {
+      const mousePos = screen.getCursorScreenPoint()
+      win.webContents.send('mouse-position', { x: mousePos.x, y: mousePos.y })
+    }
+  }, 16) // ~60fps
+}
+
+// 停止鼠标位置跟踪
+function stopMouseTracking() {
+  if (mouseTrackingInterval) {
+    clearInterval(mouseTrackingInterval)
+    mouseTrackingInterval = null
+  }
 }
 
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
+  stopMouseTracking()
   if (process.platform !== 'darwin') {
     app.quit()
     win = null
@@ -155,4 +182,6 @@ function getContentType(filePath: string): string {
 }
 
 // 应用退出时清理
-app.on('before-quit', () => {})
+app.on('before-quit', () => {
+  stopMouseTracking()
+})
