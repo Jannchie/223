@@ -1,11 +1,13 @@
-import { defineConfig } from 'vite'
 import path from 'node:path'
-import electron from 'vite-plugin-electron/simple'
 import vue from '@vitejs/plugin-vue'
+import UnoCSS from 'unocss/vite'
+import { defineConfig } from 'vite'
+import electron from 'vite-plugin-electron/simple'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     vue(),
+    UnoCSS(),
     electron({
       main: {
         // Shortcut of `build.lib.entry`.
@@ -19,11 +21,11 @@ export default defineConfig({
           build: {
             rollupOptions: {
               output: {
-                format: 'cjs'
-              }
-            }
-          }
-        }
+                format: 'cjs',
+              },
+            },
+          },
+        },
       },
       // Ployfill the Electron and Node.js API for Renderer process.
       // If you want use Node.js in Renderer process, the `nodeIntegration` needs to be enabled in the Main process.

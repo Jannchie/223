@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import SimpleLive2DViewer from './components/SimpleLive2DViewer.vue'
-
 </script>
 
 <template>

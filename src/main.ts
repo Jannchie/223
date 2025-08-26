@@ -1,11 +1,12 @@
 import { createApp } from 'vue'
-import './style.css'
 import App from './App.vue'
+import './style.css'
+import 'virtual:uno.css'
 
 createApp(App).mount('#app').$nextTick(() => {
   // Use contextBridge (only in electron context)
-  if ((window as any).ipcRenderer) {
-    (window as any).ipcRenderer.on('main-process-message', (_event: any, message: any) => {
+  if ((globalThis as any).ipcRenderer) {
+    (globalThis as any).ipcRenderer.on('main-process-message', (_event: any, message: any) => {
       console.log(message)
     })
   }

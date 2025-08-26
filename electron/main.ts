@@ -1,8 +1,8 @@
-import { app, BrowserWindow, screen, protocol } from 'electron'
+import fs from 'node:fs'
+import path from 'node:path'
 // import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import path from 'node:path'
-import fs from 'fs'
+import { app, BrowserWindow, protocol, screen } from 'electron'
 
 // const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -19,7 +19,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 process.env.APP_ROOT = path.join(__dirname, '..')
 
 // 🚧 Use ['ENV_NAME'] avoid vite:define plugin - Vite@2.x
-export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
+export const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL
 export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron')
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 
@@ -27,21 +27,21 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 
 
 let win: BrowserWindow | null
 
-app.commandLine.appendSwitch('--enable-unsafe-swiftshader');
-app.commandLine.appendSwitch('--ignore-gpu-blacklist');
-app.commandLine.appendSwitch('--enable-gpu-rasterization');
-app.commandLine.appendSwitch('--enable-accelerated-2d-canvas');
-app.commandLine.appendSwitch('--disable-background-timer-throttling');
-app.commandLine.appendSwitch('--disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('--enable-unsafe-swiftshader')
+app.commandLine.appendSwitch('--ignore-gpu-blacklist')
+app.commandLine.appendSwitch('--enable-gpu-rasterization')
+app.commandLine.appendSwitch('--enable-accelerated-2d-canvas')
+app.commandLine.appendSwitch('--disable-background-timer-throttling')
+app.commandLine.appendSwitch('--disable-backgrounding-occluded-windows')
 
 function createWindow() {
   // 获取主显示器的完整尺寸（包括任务栏区域）
   const primaryDisplay = screen.getPrimaryDisplay()
   const { width, height } = primaryDisplay.bounds
-  
+
   win = new BrowserWindow({
-    width: width,
-    height: height,
+    width,
+    height,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -54,10 +54,10 @@ function createWindow() {
       contextIsolation: true,
     },
   })
-  
+
   // 设置鼠标事件处理：透明区域可以接收事件，但允许右键穿透
   win.setIgnoreMouseEvents(false, { forward: true })
-  
+
   // 监听渲染进程的消息来动态控制鼠标事件
   win.webContents.on('ipc-message', (_, channel, data) => {
     if (channel === 'set-ignore-mouse-events') {
@@ -67,14 +67,15 @@ function createWindow() {
 
   // Test active push message to Renderer-process.
   win.webContents.on('did-finish-load', () => {
-    win?.webContents.send('main-process-message', (new Date).toLocaleString())
+    win?.webContents.send('main-process-message', (new Date()).toLocaleString())
   })
 
   // Enable dev tools in development mode
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL)
     win.webContents.openDevTools({ mode: 'detach' })
-  } else {
+  }
+  else {
     // win.loadFile('dist/index.html')
     win.loadFile(path.join(RENDERER_DIST, 'index.html'))
   }
@@ -113,25 +114,24 @@ app.whenReady().then(() => {
   protocol.handle('app', (request) => {
     const url = request.url.slice('app://'.length)
     const filePath = path.join(process.env.VITE_PUBLIC || path.join(process.env.APP_ROOT, 'public'), url)
-    
+
     try {
       // 检查文件是否存在
-      if (fs.existsSync(filePath)) {
-        return new Response(fs.readFileSync(filePath), {
+      return fs.existsSync(filePath)
+        ? new Response(fs.readFileSync(filePath), {
           headers: {
             'Content-Type': getContentType(filePath),
             'Access-Control-Allow-Origin': '*',
-          }
+          },
         })
-      } else {
-        return new Response('File not found', { status: 404 })
-      }
-    } catch (error) {
+        : new Response('File not found', { status: 404 })
+    }
+    catch (error) {
       console.error('Error loading file:', error)
       return new Response('Error loading file', { status: 500 })
     }
   })
-  
+
   createWindow()
 })
 
@@ -153,5 +153,4 @@ function getContentType(filePath: string): string {
 }
 
 // 应用退出时清理
-app.on('before-quit', () => {
-})
+app.on('before-quit', () => {})

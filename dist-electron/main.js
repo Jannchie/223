@@ -1,10 +1,10 @@
-import { app, BrowserWindow, protocol, screen } from "electron";
-import { fileURLToPath } from "node:url";
+import fs from "node:fs";
 import path from "node:path";
-import fs from "fs";
+import { fileURLToPath } from "node:url";
+import { app, BrowserWindow, protocol, screen } from "electron";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 process.env.APP_ROOT = path.join(__dirname, "..");
-const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
+const VITE_DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL;
 const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
 const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, "public") : RENDERER_DIST;
@@ -71,16 +71,12 @@ app.whenReady().then(() => {
     const url = request.url.slice("app://".length);
     const filePath = path.join(process.env.VITE_PUBLIC || path.join(process.env.APP_ROOT, "public"), url);
     try {
-      if (fs.existsSync(filePath)) {
-        return new Response(fs.readFileSync(filePath), {
-          headers: {
-            "Content-Type": getContentType(filePath),
-            "Access-Control-Allow-Origin": "*"
-          }
-        });
-      } else {
-        return new Response("File not found", { status: 404 });
-      }
+      return fs.existsSync(filePath) ? new Response(fs.readFileSync(filePath), {
+        headers: {
+          "Content-Type": getContentType(filePath),
+          "Access-Control-Allow-Origin": "*"
+        }
+      }) : new Response("File not found", { status: 404 });
     } catch (error) {
       console.error("Error loading file:", error);
       return new Response("Error loading file", { status: 500 });
