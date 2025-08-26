@@ -357,19 +357,22 @@ function calculateInputPosition() {
     }
 
     // 基于模型的实际高度和位置计算胸部位置
-    // 通常胸部位于模型中心偏上的位置
+    // model.y 是模型在canvas中的位置（相对于canvas）
     const modelCenterY = model.y
     const modelHeight = model.height * model.scale.y
 
     console.log(`Model center Y: ${modelCenterY}, Model height: ${modelHeight}`)
+    console.log(`Canvas scale: ${canvasScale.value}`)
 
-    // 胸部通常在模型中心上方约1/6到1/4的位置，输入框放在胸部下方
-    const chestY = modelCenterY - modelHeight * 0.15 // 胸部位置
+    // 胸部通常在模型中心下方约1/6到1/4的位置，输入框放在胸部下方
+    const chestRelativeY = modelCenterY + modelHeight * 0.15 // 胸部位置（相对于canvas）
     const inputOffsetY = 50 // 固定的像素偏移
-    const inputY = chestY + inputOffsetY // 在胸部下方
+    const inputRelativeY = chestRelativeY + inputOffsetY // 在胸部下方（相对于canvas）
 
-    // 存储绝对像素坐标，不需要在模板中再乘以缩放因子
-    inputPositionY.value = inputY
+    console.log(`Chest relative Y: ${chestRelativeY}, Input relative Y: ${inputRelativeY}`)
+
+    // 存储相对于canvas的坐标，在模板中会加上canvasY
+    inputPositionY.value = inputRelativeY
   }
   catch (error) {
     console.log('Error calculating input position:', error)
