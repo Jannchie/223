@@ -1,9 +1,10 @@
-import { app, BrowserWindow } from 'electron'
-import { createRequire } from 'node:module'
+import { app, BrowserWindow, screen, protocol } from 'electron'
+// import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import fs from 'fs'
 
-const require = createRequire(import.meta.url)
+// const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // The built directory structure
@@ -13,7 +14,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // │ │
 // │ ├─┬ dist-electron
 // │ │ ├── main.js
-// │ │ └── preload.mjs
+// │ │ └── preload.js
 // │
 process.env.APP_ROOT = path.join(__dirname, '..')
 
@@ -26,10 +27,21 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 
 
 let win: BrowserWindow | null
 
+app.commandLine.appendSwitch('--enable-unsafe-swiftshader');
+app.commandLine.appendSwitch('--ignore-gpu-blacklist');
+app.commandLine.appendSwitch('--enable-gpu-rasterization');
+app.commandLine.appendSwitch('--enable-accelerated-2d-canvas');
+app.commandLine.appendSwitch('--disable-background-timer-throttling');
+app.commandLine.appendSwitch('--disable-backgrounding-occluded-windows');
+
 function createWindow() {
+  // 获取主显示器的完整尺寸（包括任务栏区域）
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const { width, height } = primaryDisplay.bounds
+  
   win = new BrowserWindow({
-    width: 400,
-    height: 600,
+    width: width,
+    height: height,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -41,6 +53,16 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
     },
+  })
+  
+  // 设置鼠标事件处理：透明区域可以接收事件，但允许右键穿透
+  win.setIgnoreMouseEvents(false, { forward: true })
+  
+  // 监听渲染进程的消息来动态控制鼠标事件
+  win.webContents.on('ipc-message', (_, channel, data) => {
+    if (channel === 'set-ignore-mouse-events') {
+      win?.setIgnoreMouseEvents(data.ignore, { forward: data.forward || true })
+    }
   })
 
   // Test active push message to Renderer-process.
@@ -86,4 +108,50 @@ app.on('activate', () => {
 // Disable hardware acceleration for WSL compatibility
 app.disableHardwareAcceleration()
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  // 注册自定义协议来处理本地文件
+  protocol.handle('app', (request) => {
+    const url = request.url.slice('app://'.length)
+    const filePath = path.join(process.env.VITE_PUBLIC || path.join(process.env.APP_ROOT, 'public'), url)
+    
+    try {
+      // 检查文件是否存在
+      if (fs.existsSync(filePath)) {
+        return new Response(fs.readFileSync(filePath), {
+          headers: {
+            'Content-Type': getContentType(filePath),
+            'Access-Control-Allow-Origin': '*',
+          }
+        })
+      } else {
+        return new Response('File not found', { status: 404 })
+      }
+    } catch (error) {
+      console.error('Error loading file:', error)
+      return new Response('Error loading file', { status: 500 })
+    }
+  })
+  
+  createWindow()
+})
+
+// 根据文件扩展名获取 Content-Type
+function getContentType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase()
+  const mimeTypes: Record<string, string> = {
+    '.json': 'application/json',
+    '.moc3': 'application/octet-stream',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.cdi3': 'application/json',
+    '.motion3': 'application/json',
+    '.physics3': 'application/json',
+    '.pose3': 'application/json',
+  }
+  return mimeTypes[ext] || 'application/octet-stream'
+}
+
+// 应用退出时清理
+app.on('before-quit', () => {
+})

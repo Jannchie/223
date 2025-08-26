@@ -1,6 +1,23 @@
 import { ipcRenderer, contextBridge } from 'electron'
 
 // --------- Expose some API to the Renderer process ---------
+contextBridge.exposeInMainWorld('electronAPI', {
+  getModelPath: (modelName: string) => {
+    // 使用自定义协议来加载本地文件
+    return `app://models/${modelName}`
+  },
+  
+  // 鼠标位置监听
+  onMousePosition: (callback: (position: { x: number, y: number }) => void) => {
+    ipcRenderer.on('mouse-position', (_, position) => callback(position))
+  },
+  
+  // 移除鼠标位置监听
+  removeMousePositionListener: () => {
+    ipcRenderer.removeAllListeners('mouse-position')
+  }
+})
+
 contextBridge.exposeInMainWorld('ipcRenderer', {
   on(...args: Parameters<typeof ipcRenderer.on>) {
     const [channel, listener] = args
