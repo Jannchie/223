@@ -28,6 +28,7 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 
 
 let win: BrowserWindow | null
 let mouseTrackingInterval: NodeJS.Timeout | null = null
+let lastMousePosition = { x: -1, y: -1 } // 记录上次鼠标位置
 
 app.commandLine.appendSwitch('--enable-unsafe-swiftshader')
 app.commandLine.appendSwitch('--ignore-gpu-blacklist')
@@ -102,9 +103,14 @@ function startMouseTracking() {
   mouseTrackingInterval = setInterval(() => {
     if (win && !win.isDestroyed()) {
       const mousePos = screen.getCursorScreenPoint()
-      win.webContents.send('mouse-position', { x: mousePos.x, y: mousePos.y })
+      
+      // 只有鼠标位置真正变化时才发送事件
+      if (mousePos.x !== lastMousePosition.x || mousePos.y !== lastMousePosition.y) {
+        lastMousePosition = { x: mousePos.x, y: mousePos.y }
+        win.webContents.send('mouse-position', { x: mousePos.x, y: mousePos.y })
+      }
     }
-  }, 16) // ~60fps
+  }, 33) // ~30fps, 降低频率减少不必要的检查
 }
 
 // 停止鼠标位置跟踪
