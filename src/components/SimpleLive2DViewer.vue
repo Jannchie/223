@@ -4,12 +4,35 @@ import { useLocalStorage } from '@vueuse/core'
 import { Live2DModel } from 'pixi-live2d-display-lipsyncpatch/cubism4'
 import { Application, Ticker } from 'pixi.js'
 import { onMounted, onUnmounted, ref } from 'vue'
+import { getChatInstance, initOpenAI } from '../utils/openai'
 
 // 输入框相关状态
 const inputText = ref('')
 const inputPositionY = ref(0)
 const cursorPosition = ref({ x: 0, y: 0 })
 const isInputFocused = ref(false)
+
+// 聊天相关状态
+const isTyping = ref(false)
+const currentResponse = ref('')
+const showBubble = ref(false)
+const bubbleContent = ref('')
+const bubbleTimeout = ref<NodeJS.Timeout | null>(null)
+
+// 说话动画相关状态
+const isSpeaking = ref(false)
+const speakingTimer = ref<NodeJS.Timeout | null>(null)
+
+// OpenAI 配置
+const apiKey = useLocalStorage('openai-api-key', '')
+const baseURL = useLocalStorage('openai-base-url', 'https://api.openai.com/v1')
+const showSettings = ref(false)
+
+// 窗口尺寸
+const windowHeight = ref(window.innerHeight)
+
+// 输入框显示控制
+const isInputVisible = ref(false)
 
 // 鼠标位置状态
 const mouseX = ref(0)
@@ -268,10 +291,242 @@ const debouncedCalculateCursorPosition = debounce((inputElement: HTMLInputElemen
   calculateCursorPosition(inputElement)
 }, 50)
 
+// 初始化 OpenAI
+function initializeOpenAI() {
+  if (apiKey.value) {
+    try {
+      initOpenAI(apiKey.value, baseURL.value)
+      console.log('OpenAI 初始化成功')
+      // 显示欢迎消息
+      showTemporaryBubble('嗨~我是06娘！快来和我聊天吧~ ✨', 4000)
+    }
+    catch (error) {
+      console.error('OpenAI 初始化失败:', error)
+    }
+  }
+  else {
+    // 如果没有配置API Key，显示提示消息
+    showTemporaryBubble('点击下方的设置按钮⚙️配置API Key就可以和我聊天啦~', 6000)
+  }
+}
+
+// 发送消息
+async function sendMessage() {
+  const content = inputText.value.trim()
+  if (!content || isTyping.value) {
+    return
+  }
+
+  const chatInstance = getChatInstance()
+  if (!chatInstance) {
+    showTemporaryBubble('请先配置 OpenAI API Key')
+    return
+  }
+
+  // 清空输入框
+  inputText.value = ''
+  isTyping.value = true
+  currentResponse.value = ''
+
+  // 用户发送消息后，让角色面向前方（看向用户）
+  if (model) {
+    // 清除当前的目光追踪，让角色看向前方
+    // clearGazeTarget()
+    // 计算角色正前方的位置（角色头顶正前方）
+    const characterCenterX = canvasX.value + (canvasWidth.value * canvasScale.value) / 2
+    const characterFrontY = canvasY.value // 角色头顶前方位置
+    setTimeout(() => {
+      setGazeTarget(characterCenterX, characterFrontY)
+    }, 100)
+  }
+
+  try {
+    await chatInstance.sendMessage(content, {
+      onToken: (token: string) => {
+        currentResponse.value += token
+        showBubble.value = true
+        bubbleContent.value = currentResponse.value
+
+        // 开始说话动画
+        if (!isSpeaking.value) {
+          startSpeaking()
+        }
+      },
+      onComplete: (fullContent: string) => {
+        isTyping.value = false
+        bubbleContent.value = fullContent
+
+        // 停止说话动画
+        stopSpeaking()
+
+        // AI 回复完成后自动聚焦到输入框
+        setTimeout(() => {
+          const inputElement = document.querySelector('.text-input') as HTMLInputElement
+          if (inputElement) {
+            inputElement.focus()
+            // 确保输入框可见
+            isInputVisible.value = true
+          }
+        }, 100)
+
+        // 5秒后隐藏气泡
+        if (bubbleTimeout.value) {
+          clearTimeout(bubbleTimeout.value)
+        }
+        bubbleTimeout.value = setTimeout(() => {
+          showBubble.value = false
+        }, 5000)
+      },
+      onError: (error: string) => {
+        isTyping.value = false
+        stopSpeaking() // 出错时也要停止说话动画
+        showTemporaryBubble(`错误: ${error}`)
+      },
+    })
+  }
+  catch {
+    isTyping.value = false
+    stopSpeaking() // 出错时也要停止说话动画
+    showTemporaryBubble('发送消息失败')
+  }
+}
+
+// 显示临时气泡
+function showTemporaryBubble(content: string, duration: number = 3000) {
+  bubbleContent.value = content
+  showBubble.value = true
+  if (bubbleTimeout.value) {
+    clearTimeout(bubbleTimeout.value)
+  }
+  bubbleTimeout.value = setTimeout(() => {
+    showBubble.value = false
+  }, duration)
+}
+
+// 开始说话动画
+function startSpeaking() {
+  if (!model) {
+    return
+  }
+
+  isSpeaking.value = true
+
+  // 尝试使用 speak 方法
+  if (typeof model.speak === 'function') {
+    console.log('Using model.speak() method')
+    model.speak()
+  }
+  // 或者尝试通过参数控制口型
+  else if (model.internalModel) {
+    console.log('Controlling mouth parameters manually')
+    controlMouthAnimation(true)
+  }
+}
+
+// 停止说话动画
+function stopSpeaking() {
+  if (!model) {
+    return
+  }
+
+  isSpeaking.value = false
+
+  // 清除说话定时器
+  if (speakingTimer.value) {
+    clearTimeout(speakingTimer.value)
+    speakingTimer.value = null
+  }
+
+  // 停止说话动画
+  if (typeof model.speak === 'function') {
+    // 一些库可能有 stopSpeak 方法
+    if (typeof model.stopSpeak === 'function') {
+      model.stopSpeak()
+    }
+  }
+  else if (model.internalModel) {
+    controlMouthAnimation(false)
+  }
+}
+
+// 手动控制嘴部参数
+function controlMouthAnimation(speaking: boolean) {
+  if (!model || !model.internalModel) {
+    return
+  }
+
+  try {
+    const internalModel = model.internalModel as any
+
+    // 常见的嘴部参数名称
+    const mouthParamNames = [
+      'PARAM_MOUTH_OPEN_Y',
+      'ParamMouthOpenY',
+      'mouth_open_y',
+      'MouthOpenY',
+      'PARAM_MOUTH_FORM',
+      'ParamMouthForm',
+      'mouth_form',
+    ]
+
+    if (speaking) {
+      // 开始说话动画 - 随机嘴型变化
+      const animateMouth = () => {
+        if (!isSpeaking.value) {
+          return
+        }
+
+        for (const paramName of mouthParamNames) {
+          try {
+            if (internalModel.coreModel && internalModel.coreModel.getParameterIndex) {
+              const paramIndex = internalModel.coreModel.getParameterIndex(paramName)
+              if (paramIndex >= 0) {
+                // 随机嘴型开合程度 (0.2 到 1.0)
+                const openValue = 0.2 + Math.random() * 0.8
+                internalModel.coreModel.setParameterValueByIndex(paramIndex, openValue)
+                console.log(`Set ${paramName} to ${openValue}`)
+              }
+            }
+          }
+          catch {
+            // 忽略错误，尝试下一个参数名
+          }
+        }
+
+        // 继续动画
+        speakingTimer.value = setTimeout(animateMouth, 100 + Math.random() * 100)
+      }
+
+      animateMouth()
+    }
+    else {
+      // 停止说话 - 重置嘴型
+      for (const paramName of mouthParamNames) {
+        try {
+          if (internalModel.coreModel && internalModel.coreModel.getParameterIndex) {
+            const paramIndex = internalModel.coreModel.getParameterIndex(paramName)
+            if (paramIndex >= 0) {
+              internalModel.coreModel.setParameterValueByIndex(paramIndex, 0)
+              console.log(`Reset ${paramName} to 0`)
+            }
+          }
+        }
+        catch {
+          // 忽略错误
+        }
+      }
+    }
+  }
+  catch (error) {
+    console.log('Error controlling mouth animation:', error)
+  }
+}
+
 // 输入框事件处理
 function handleInputFocus(event: FocusEvent) {
   console.log('[handleInputFocus] 输入框获得焦点')
   isInputFocused.value = true
+  isInputVisible.value = true // 聚焦时保持可见
   const inputElement = event.target as HTMLInputElement
   calculateCursorPosition(inputElement)
 }
@@ -281,6 +536,12 @@ function handleInputBlur() {
   isInputFocused.value = false
   // 失去焦点时恢复到鼠标追踪模式
   clearGazeTarget()
+  // 失去焦点后如果鼠标不在交互区域，隐藏输入框
+  setTimeout(() => {
+    if (!checkMouseInInteractiveArea(mouseX.value, mouseY.value)) {
+      isInputVisible.value = false
+    }
+  }, 100)
 }
 
 function handleInputChange(event: Event) {
@@ -298,6 +559,14 @@ function handleInputCursorMove(event: Event) {
     console.log('[handleInputCursorMove] 光标位置移动')
     // 立即计算光标位置，不使用防抖
     calculateCursorPosition(inputElement)
+  }
+}
+
+// 处理回车键
+function handleKeyDown(event: KeyboardEvent) {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    sendMessage()
   }
 }
 
@@ -569,11 +838,24 @@ function updateCanvasProperties() {
   }
 }
 
+// 检查鼠标是否在输入框或canvas区域
+function checkMouseInInteractiveArea(clientX: number, clientY: number): boolean {
+  // 检查是否在canvas区域
+  const inCanvas = isPointInCanvas(clientX, clientY)
+  // 检查是否在输入框区域
+  const inInput = isPointInInput(clientX, clientY)
+  return inCanvas || inInput
+}
+
 // 鼠标移动事件处理（主要用于拖拽）
 function handleMouseMove(event: MouseEvent) {
   // 更新鼠标位置
   mouseX.value = event.clientX
   mouseY.value = event.clientY
+
+  // 检查是否应该显示输入框
+  const shouldShowInput = checkMouseInInteractiveArea(event.clientX, event.clientY)
+  isInputVisible.value = shouldShowInput
 
   // 如果正在拖拽，更新canvas位置
   if (isDragging.value) {
@@ -696,8 +978,21 @@ function handleContextMenu(event: MouseEvent) {
   if (!isPointInCanvas(event.clientX, event.clientY)) {
     return
   }
-  // 在canvas区域内的右键，阻止默认菜单
+  // 在canvas区域内的右键，显示设置面板
   event.preventDefault()
+  showSettings.value = true
+}
+
+// 保存设置
+function saveSettings() {
+  initializeOpenAI()
+  showSettings.value = false
+  showTemporaryBubble('设置已保存')
+}
+
+// 取消设置
+function cancelSettings() {
+  showSettings.value = false
 }
 
 // 通过Electron API获取本地文件路径
@@ -712,6 +1007,15 @@ function getModelURL() {
 
 onMounted(async () => {
   try {
+    // 初始化 OpenAI
+    initializeOpenAI()
+
+    // 监听窗口大小变化
+    const handleResize = () => {
+      windowHeight.value = window.innerHeight
+    }
+    window.addEventListener('resize', handleResize)
+
     const canvas = document.querySelector('#canvas') as HTMLCanvasElement
     if (!canvas) {
       return
@@ -745,6 +1049,11 @@ onMounted(async () => {
 
     app.stage.addChild(model)
 
+    // 将模型设为全局变量，方便外部访问
+    if (typeof globalThis !== 'undefined') {
+      (globalThis as any).live2dModel = model
+    }
+
     // 设置模型显示
     model.anchor.set(0.5, 0.5)
     model.position.set(initialWidth / 2, initialHeight / 2)
@@ -752,6 +1061,18 @@ onMounted(async () => {
     // 确保模型在可视范围内
     baseModelScale = Math.min(initialWidth / model.width, initialHeight / model.height) * 0.8
     model.scale.set(baseModelScale, baseModelScale)
+
+    // 检查模型的可用方法和属性
+    console.log('Live2D Model methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(model)))
+    console.log('Live2D Model object:', model)
+
+    // 尝试查找说话相关的方法
+    if (typeof model.speak === 'function') {
+      console.log('Found speak method!')
+    }
+    if (typeof model.motion === 'function') {
+      console.log('Found motion method!')
+    }
 
     // 初始化canvas位置和尺寸（仅在localStorage为空时设置默认值）
     if (canvasWidth.value === 800 && canvasHeight.value === 1200) {
@@ -796,11 +1117,24 @@ onUnmounted(() => {
   if (app) {
     app.ticker.remove(updateGazeParameters)
   }
-  // 清理全局函数
+  // 清理全局函数和变量
   if (typeof globalThis !== 'undefined') {
     delete (globalThis as any).setGazeTarget
     delete (globalThis as any).clearGazeTarget
+    delete (globalThis as any).live2dModel
   }
+  // 清理气泡定时器
+  if (bubbleTimeout.value) {
+    clearTimeout(bubbleTimeout.value)
+  }
+  // 清理说话动画定时器
+  if (speakingTimer.value) {
+    clearTimeout(speakingTimer.value)
+  }
+  // 清理窗口大小监听器
+  window.removeEventListener('resize', () => {
+    windowHeight.value = window.innerHeight
+  })
 })
 </script>
 
@@ -810,6 +1144,7 @@ onUnmounted(() => {
     @mousemove="handleMouseMove"
     @mouseover="handleMouseMove"
     @mouseout="handleMouseMove"
+    @mouseleave="isInputVisible = false"
     @mousedown="handleMouseDown"
     @mouseup="handleMouseUp"
     @wheel="handleWheel"
@@ -819,6 +1154,7 @@ onUnmounted(() => {
     <canvas id="canvas" />
     <div
       class="input-container"
+      :class="{ 'input-visible': isInputVisible }"
       :style="{
         'left': `${canvasX}px`,
         'top': `${canvasY + inputPositionY}px`,
@@ -829,18 +1165,79 @@ onUnmounted(() => {
       <input
         v-model="inputText"
         type="text"
-        placeholder="请输入内容..."
+        :placeholder="isTyping ? '正在思考...' : '请输入内容（回车发送）...'"
         class="text-input"
+        :disabled="isTyping"
         @focus="handleInputFocus"
         @blur="handleInputBlur"
         @input="handleInputChange"
         @keyup="handleInputCursorMove"
         @click="handleInputCursorMove"
-        @keydown="handleInputCursorMove"
+        @keydown="handleKeyDown"
         @select="handleInputCursorMove"
       >
+      <!-- 设置按钮 -->
+      <button
+        class="settings-button"
+        title="打开设置"
+        @click="showSettings = true"
+      >
+        ⚙️
+      </button>
+    </div>
+
+    <!-- 对话气泡 -->
+    <div
+      v-if="showBubble"
+      class="chat-bubble"
+      :style="{
+        left: `${canvasX + (canvasWidth * canvasScale) / 2}px`,
+        bottom: `${windowHeight - canvasY - 80}px`,
+        transform: 'translateX(-50%)',
+      }"
+    >
+      <div class="bubble-content">
+        {{ bubbleContent }}
+        <span v-if="isTyping" class="typing-indicator">|</span>
+      </div>
+      <div class="bubble-arrow" />
     </div>
   </div>
+
+  <!-- 设置面板 - 独立于主容器 -->
+  <teleport to="body">
+    <div v-if="showSettings" class="settings-overlay" @click="cancelSettings">
+      <div class="settings-panel" @click.stop @keydown.stop @keyup.stop @keypress.stop>
+        <h3>OpenAI 设置</h3>
+        <div class="setting-item">
+          <label>API Key:</label>
+          <input
+            v-model="apiKey"
+            type="password"
+            placeholder="输入你的 OpenAI API Key"
+            class="setting-input"
+          >
+        </div>
+        <div class="setting-item">
+          <label>Base URL:</label>
+          <input
+            v-model="baseURL"
+            type="text"
+            placeholder="API 基础地址"
+            class="setting-input"
+          >
+        </div>
+        <div class="setting-actions">
+          <button class="save-btn" @click="saveSettings">
+            保存
+          </button>
+          <button class="cancel-btn" @click="cancelSettings">
+            取消
+          </button>
+        </div>
+      </div>
+    </div>
+  </teleport>
 </template>
 
 <style scoped>
@@ -869,9 +1266,25 @@ onUnmounted(() => {
   position: absolute;
   z-index: 100;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
   -webkit-app-region: no-drag;
   pointer-events: auto;
+  opacity: 0.05;
+  transition: opacity 0.3s ease-in-out;
+}
+
+.input-container.input-visible {
+  opacity: 1;
+}
+
+.input-container:focus-within {
+  opacity: 1 !important;
+}
+
+.input-container:hover {
+  opacity: 1 !important;
 }
 
 .text-input {
@@ -892,5 +1305,211 @@ onUnmounted(() => {
   border-color: #4a9eff;
   box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.1);
   background: rgba(255, 255, 255, 0.95);
+}
+
+.text-input:disabled {
+  background: rgba(230, 230, 230, 0.9);
+  cursor: not-allowed;
+}
+
+/* 设置按钮样式 */
+.settings-button {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+}
+
+.settings-button:hover {
+  background: rgba(255, 255, 255, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: scale(1.05);
+}
+
+/* 对话气泡样式 */
+.chat-bubble {
+  position: absolute;
+  z-index: 200;
+  max-width: 300px;
+  min-width: 150px;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+
+.bubble-content {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #ddd;
+  border-radius: 18px;
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #333;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  position: relative;
+}
+
+.bubble-arrow {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid rgba(255, 255, 255, 0.95);
+}
+
+.bubble-arrow::before {
+  content: '';
+  position: absolute;
+  top: -9px;
+  left: -8px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid #ddd;
+}
+
+/* 打字指示器 */
+.typing-indicator {
+  animation: blink 1s infinite;
+  font-weight: bold;
+  color: #4a9eff;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* 设置面板样式 */
+.settings-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 10000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+}
+
+.settings-panel {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 320px;
+  max-width: 400px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  pointer-events: auto;
+}
+
+.settings-panel h3 {
+  margin: 0 0 20px 0;
+  color: #333;
+  font-size: 18px;
+  text-align: center;
+}
+
+.setting-item {
+  margin-bottom: 16px;
+}
+
+.setting-item label {
+  display: block;
+  margin-bottom: 4px;
+  color: #555;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.setting-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.2s;
+  pointer-events: auto !important;
+  -webkit-app-region: no-drag;
+}
+
+.setting-input:focus {
+  border-color: #4a9eff;
+}
+
+.setting-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.save-btn, .cancel-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.save-btn {
+  background: #4a9eff;
+  color: white;
+}
+
+.save-btn:hover {
+  background: #3a8eef;
+}
+
+.cancel-btn {
+  background: #f0f0f0;
+  color: #666;
+}
+
+.cancel-btn:hover {
+  background: #e0e0e0;
+}
+
+/* 响应式设计 */
+@media (max-width: 600px) {
+  .chat-bubble {
+    max-width: 250px;
+  }
+
+  .bubble-content {
+    font-size: 13px;
+    padding: 10px 14px;
+  }
+
+  .settings-panel {
+    margin: 20px;
+    min-width: auto;
+    width: calc(100% - 40px);
+  }
 }
 </style>
