@@ -56,7 +56,8 @@ async function createWindow() {
   // 先启动静态文件服务器
   try {
     await createStaticServer()
-  } catch (error) {
+  }
+  catch (error) {
     console.error('Failed to start static server:', error)
   }
 
@@ -255,7 +256,7 @@ function stopMouseTracking() {
 // 创建本地静态文件服务器
 function createStaticServer(): Promise<number> {
   return new Promise((resolve, reject) => {
-    const publicPath = VITE_DEV_SERVER_URL 
+    const publicPath = VITE_DEV_SERVER_URL
       ? (process.env.VITE_PUBLIC || path.join(process.env.APP_ROOT, 'public'))
       : RENDERER_DIST
 
@@ -263,11 +264,11 @@ function createStaticServer(): Promise<number> {
       // 解析请求的 URL
       const urlPath = req.url || '/'
       const filePath = path.join(publicPath, urlPath)
-      
+
       // 安全检查：确保请求的文件在允许的目录内
       const normalizedPath = path.normalize(filePath)
       const normalizedPublicPath = path.normalize(publicPath)
-      
+
       if (!normalizedPath.startsWith(normalizedPublicPath)) {
         res.writeHead(403, { 'Content-Type': 'text/plain' })
         res.end('Forbidden')
@@ -293,9 +294,10 @@ function createStaticServer(): Promise<number> {
           'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
           'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         })
-        
+
         res.end(data)
-      } catch (error) {
+      }
+      catch (error) {
         console.error('Error serving file:', error)
         res.writeHead(500, { 'Content-Type': 'text/plain' })
         res.end('Internal Server Error')
@@ -309,7 +311,8 @@ function createStaticServer(): Promise<number> {
         serverPort = address.port
         console.log(`Static file server running at http://127.0.0.1:${serverPort}`)
         resolve(serverPort)
-      } else {
+      }
+      else {
         reject(new Error('Failed to get server port'))
       }
     })
@@ -358,7 +361,7 @@ app.whenReady().then(() => {
   protocol.handle('app', (request) => {
     const url = request.url.slice('app://'.length)
     // 在生产环境使用 RENDERER_DIST，开发环境使用 VITE_PUBLIC
-    const publicPath = VITE_DEV_SERVER_URL 
+    const publicPath = VITE_DEV_SERVER_URL
       ? (process.env.VITE_PUBLIC || path.join(process.env.APP_ROOT, 'public'))
       : RENDERER_DIST
     const filePath = path.join(publicPath, url)

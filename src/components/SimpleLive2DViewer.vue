@@ -793,6 +793,19 @@ function getModelURL() {
   return `/models/${model_path}`
 }
 
+const handleGlobalMouseMove = (event: MouseEvent) => {
+  // 更新鼠标位置
+  mouseX.value = event.clientX
+  mouseY.value = event.clientY
+
+  // 检查是否应该显示输入框和控制鼠标穿透
+  const shouldShowInput = checkMouseInInteractiveArea(event.clientX, event.clientY)
+  isInputVisible.value = shouldShowInput
+
+  // 根据是否在交互区域控制鼠标穿透
+  setMouseEventTransparency(!shouldShowInput)
+}
+
 onMounted(async () => {
   // 初始化 OpenAI
   initializeOpenAI()
@@ -802,20 +815,6 @@ onMounted(async () => {
     windowHeight.value = window.innerHeight
   }
   window.addEventListener('resize', handleResize)
-
-  // 监听全局鼠标移动事件，用于处理 Modal 区域的鼠标穿透
-  const handleGlobalMouseMove = (event: MouseEvent) => {
-    // 更新鼠标位置
-    mouseX.value = event.clientX
-    mouseY.value = event.clientY
-
-    // 检查是否应该显示输入框和控制鼠标穿透
-    const shouldShowInput = checkMouseInInteractiveArea(event.clientX, event.clientY)
-    isInputVisible.value = shouldShowInput
-
-    // 根据是否在交互区域控制鼠标穿透
-    setMouseEventTransparency(!shouldShowInput)
-  }
 
   // 只在设置面板显示时监听全局鼠标事件
   const watchSettings = () => {
@@ -881,14 +880,14 @@ onMounted(async () => {
   if (typeof globalThis !== 'undefined') {
     (globalThis as any).live2dModel = model
   }
-
-  // 设置模型显示
-  model.anchor.set(0.5, 0.5)
-  model.position.set(initialWidth / 2, initialHeight / 2)
-
-  // 确保模型在可视范围内
-  baseModelScale = Math.min(initialWidth / model.width, initialHeight / model.height) * 0.8
-  model.scale.set(baseModelScale, baseModelScale)
+  if (model) {
+    // 设置模型显示
+    model.anchor.set(0.5, 0.5)
+    model.position.set(initialWidth / 2, initialHeight / 2)
+    baseModelScale = Math.min(initialWidth / model.width, initialHeight / model.height) * 0.8
+    // 确保模型在可视范围内
+    model.scale.set(baseModelScale, baseModelScale)
+  }
 
   // 初始化canvas位置和尺寸（仅在localStorage为空时设置默认值）
   if (canvasWidth.value === 800 && canvasHeight.value === 1200) {
@@ -930,7 +929,7 @@ onUnmounted(() => {
   }
 
   // 清理全局鼠标事件监听器
-  document.removeEventListener('mousemove', () => {})
+  document.removeEventListener('mousemove', handleMouseMove)
   // 清理ticker
   if (app) {
     Ticker.shared.remove(updateGazeParameters)

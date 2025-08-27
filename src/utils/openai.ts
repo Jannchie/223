@@ -22,7 +22,7 @@ export class OpenAIChat {
     this.client = new OpenAI({
       apiKey,
       baseURL: baseURL || 'https://api.openai.com/v1',
-      dangerouslyAllowBrowser: true
+      dangerouslyAllowBrowser: true,
     })
   }
 
@@ -31,7 +31,7 @@ export class OpenAIChat {
       id: Date.now().toString(),
       role,
       content,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     }
     this.messages.push(message)
     return message
@@ -55,17 +55,17 @@ export class OpenAIChat {
         { role: 'system' as const, content: SYSTEM_PROMPT },
         ...this.messages.map(msg => ({
           role: msg.role,
-          content: msg.content
-        }))
+          content: msg.content,
+        })),
       ]
 
       // 创建流式请求
       const stream = await this.client.chat.completions.create({
-        model: 'gpt-4o',  // 使用 GPT-4o 模型
+        model: 'gpt-4o', // 使用 GPT-4o 模型
         messages,
         stream: true,
         temperature: 0.7,
-        max_tokens: 2000
+        max_tokens: 2000,
       })
 
       let fullContent = ''
@@ -83,8 +83,8 @@ export class OpenAIChat {
       // 添加助手消息
       this.addMessage('assistant', fullContent)
       callbacks.onComplete(fullContent)
-
-    } catch (error) {
+    }
+    catch (error) {
       console.error('OpenAI API error:', error)
       callbacks.onError(error instanceof Error ? error.message : '发送消息失败')
     }
