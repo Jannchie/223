@@ -1,9 +1,15 @@
 // @see - https://www.electron.build/configuration/configuration
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "YourAppID",
+  "appId": "com.ninisan.desktop-pet",
   "asar": true,
-  "productName": "YourAppName",
+  "productName": "NiNiSan",
+  "copyright": "Copyright © 2025",
+  "description": "NiNiSan - 桌面助手应用",
+  "author": {
+    "name": "NiNiSan Team"
+  },
+  "homepage": "https://github.com/ninisan/desktop-pet",
   "directories": {
     "output": "release/${version}"
   },
@@ -15,7 +21,9 @@
     "target": [
       "dmg"
     ],
-    "artifactName": "${productName}-Mac-${version}-Installer.${ext}"
+    "artifactName": "${productName}-Mac-${version}-Installer.${ext}",
+    "category": "public.app-category.entertainment",
+    "icon": "build/icon.icns"
   },
   "win": {
     "target": [
@@ -26,7 +34,9 @@
         ]
       }
     ],
-    "artifactName": "${productName}-Windows-${version}-Setup.${ext}"
+    "artifactName": "${productName}-Windows-${version}-Setup.${ext}",
+    "icon": "build/icon.ico",
+    "publisherName": "NiNiSan Team"
   },
   "nsis": {
     "oneClick": false,
@@ -38,6 +48,13 @@
     "target": [
       "AppImage"
     ],
-    "artifactName": "${productName}-Linux-${version}.${ext}"
+    "artifactName": "${productName}-Linux-${version}.${ext}",
+    "icon": "build/icon.png",
+    "category": "Game"
+  },
+  "publish": {
+    "provider": "github",
+    "owner": "ninisan",
+    "repo": "desktop-pet"
   }
 }

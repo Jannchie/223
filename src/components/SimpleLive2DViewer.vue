@@ -774,6 +774,7 @@ onMounted(async () => {
     view: canvas,
     backgroundAlpha: 0,
     powerPreference: 'low-power',
+    preference: 'webgl', // 强制使用 WebGL 渲染器
   })
   // 限制帧率为 60fps
   Ticker.shared.maxFPS = 0

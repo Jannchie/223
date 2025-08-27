@@ -3,10 +3,20 @@ import fs from 'node:fs'
 import path from 'node:path'
 // import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, protocol, screen } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, protocol, screen, Tray } from 'electron'
 
 // const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+// 处理未捕获的 Promise 拒绝
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Promise Rejection at:', promise, 'reason:', reason)
+})
+
+// 处理未捕获的异常
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error)
+})
 
 // The built directory structure
 //
@@ -27,15 +37,17 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null
+let tray: Tray | null = null
 let mouseTrackingInterval: NodeJS.Timeout | null = null
 let lastMousePosition = { x: -1, y: -1 } // 记录上次鼠标位置
 
-app.commandLine.appendSwitch('--enable-unsafe-swiftshader')
-app.commandLine.appendSwitch('--ignore-gpu-blacklist')
+// GPU 和性能优化配置
 app.commandLine.appendSwitch('--enable-gpu-rasterization')
 app.commandLine.appendSwitch('--enable-accelerated-2d-canvas')
 app.commandLine.appendSwitch('--disable-background-timer-throttling')
 app.commandLine.appendSwitch('--disable-backgrounding-occluded-windows')
+// 减少 GPU stall
+app.commandLine.appendSwitch('--max-gum-fps=30')
 
 function createWindow() {
   // 获取主显示器的完整尺寸（包括任务栏区域）
@@ -92,6 +104,98 @@ function createWindow() {
 
   // 开始全局鼠标位置跟踪
   startMouseTracking()
+
+  // 创建系统托盘
+  createTray()
+}
+
+// 创建系统托盘函数
+function createTray() {
+  try {
+    // 在 Windows 系统上，SVG 文件可能不被支持，使用空的图像创建托盘
+    // 或者创建一个简单的 PNG 图标
+    let iconPath: string
+
+    if (process.platform === 'win32') {
+      // Windows 需要 ICO 或 PNG 格式
+      iconPath = path.join(__dirname, '..', 'build', 'icon.ico')
+      if (fs.existsSync(iconPath)) {
+        tray = new Tray(iconPath)
+      }
+      else {
+        // 如果没有图标文件，创建一个最小的托盘
+        console.warn('No icon found, creating system tray with default icon')
+        // Windows 可以使用 nativeImage 创建空图标
+        const emptyIcon = nativeImage.createEmpty()
+        tray = new Tray(emptyIcon)
+      }
+    }
+    else {
+      // macOS 和 Linux 可以使用 PNG
+      iconPath = path.join(process.env.VITE_PUBLIC, 'vite.svg')
+      if (!fs.existsSync(iconPath)) {
+        console.warn('Tray icon not found, skipping system tray creation')
+        return
+      }
+      tray = new Tray(iconPath)
+    }
+  }
+  catch (error) {
+    console.error('Failed to create system tray:', error)
+    return
+  }
+
+  if (!tray) {
+    console.warn('System tray not created')
+    return
+  }
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'NiNiSan',
+      type: 'normal',
+      enabled: false,
+    },
+    {
+      type: 'separator',
+    },
+    {
+      label: '显示/隐藏',
+      type: 'normal',
+      click: () => {
+        if (win) {
+          if (win.isVisible()) {
+            win.hide()
+          }
+          else {
+            win.show()
+          }
+        }
+      },
+    },
+    {
+      label: '退出',
+      type: 'normal',
+      click: () => {
+        app.quit()
+      },
+    },
+  ])
+
+  tray.setContextMenu(contextMenu)
+  tray.setToolTip('NiNiSan - 桌面助手')
+
+  // 双击托盘图标显示/隐藏窗口
+  tray.on('double-click', () => {
+    if (win) {
+      if (win.isVisible()) {
+        win.hide()
+      }
+      else {
+        win.show()
+      }
+    }
+  })
 }
 
 // 全局鼠标位置跟踪函数
@@ -103,7 +207,7 @@ function startMouseTracking() {
   mouseTrackingInterval = setInterval(() => {
     if (win && !win.isDestroyed()) {
       const mousePos = screen.getCursorScreenPoint()
-      
+
       // 只有鼠标位置真正变化时才发送事件
       if (mousePos.x !== lastMousePosition.x || mousePos.y !== lastMousePosition.y) {
         lastMousePosition = { x: mousePos.x, y: mousePos.y }
@@ -190,4 +294,8 @@ function getContentType(filePath: string): string {
 // 应用退出时清理
 app.on('before-quit', () => {
   stopMouseTracking()
+  if (tray) {
+    tray.destroy()
+    tray = null
+  }
 })
