@@ -1,7 +1,7 @@
 <!-- eslint-disable no-console -->
 <script setup lang="ts">
+import { Live2DModel } from '@jannchie/pixi-live2d-display'
 import { useLocalStorage } from '@vueuse/core'
-import { Live2DModel } from 'pixi-live2d-display-lipsyncpatch/cubism4'
 import { Application, Ticker } from 'pixi.js'
 import { onMounted, onUnmounted, ref } from 'vue'
 import { getChatInstance, initOpenAI } from '../utils/openai'
@@ -22,7 +22,6 @@ const bubblePositionX = ref(0)
 const bubblePositionY = ref(0)
 
 // 说话动画相关状态
-const isSpeaking = ref(false)
 const speakingTimer = ref<NodeJS.Timeout | null>(null)
 
 // OpenAI 配置
@@ -40,8 +39,7 @@ const isInputVisible = ref(false)
 const mouseX = ref(0)
 const mouseY = ref(0)
 let model: Live2DModel | null = null
-let app: Application | null = null
-
+const app = new Application()
 // 目光追踪相关状态
 const gazeTargetX = ref<number | null>(null)
 const gazeTargetY = ref<number | null>(null)
@@ -72,14 +70,12 @@ let baseModelScale = 1
 
 // 设置目光追踪目标的钩子函数
 function setGazeTarget(x: number, y: number) {
-  console.log(`[setGazeTarget] 设置目标坐标: (${x}, ${y})`)
   gazeTargetX.value = x
   gazeTargetY.value = y
 }
 
 // 清除目光追踪目标，回到鼠标追踪模式
 function clearGazeTarget() {
-  console.log('[clearGazeTarget] 清除目光跟踪目标，恢复鼠标跟踪')
   gazeTargetX.value = null
   gazeTargetY.value = null
 }
@@ -87,13 +83,9 @@ function clearGazeTarget() {
 // 计算输入框光标的屏幕坐标位置
 function calculateCursorPosition(inputElement: HTMLInputElement) {
   try {
-    console.log('=== 开始计算光标位置 ===')
-
     // 获取光标位置
     const selectionStart = inputElement.selectionStart || 0
     const textBeforeCursor = inputElement.value.slice(0, Math.max(0, selectionStart))
-
-    console.log(`光标位置: ${selectionStart}, 光标前文本: "${textBeforeCursor}"`)
 
     // 获取输入框的样式信息（只需要获取一次）
     const computedStyle = globalThis.getComputedStyle(inputElement)
@@ -102,137 +94,68 @@ function calculateCursorPosition(inputElement: HTMLInputElement) {
     let textWidth = 0
 
     try {
-      // 方法1：使用 Range API 获取精确的光标位置（最准确的方法）
-      if (inputElement.setSelectionRange) {
-        // 创建一个临时的镜像元素
-        const mirror = document.createElement('div')
-        const inputStyles = getComputedStyle(inputElement)
+      // 创建一个临时的镜像元素
+      const mirror = document.createElement('div')
+      const inputStyles = getComputedStyle(inputElement)
 
-        // 复制输入框的所有相关样式
-        const stylesToCopy = [
-          'position',
-          'left',
-          'top',
-          'width',
-          'height',
-          'fontFamily',
-          'fontSize',
-          'fontWeight',
-          'fontStyle',
-          'letterSpacing',
-          'wordSpacing',
-          'textTransform',
-          'padding',
-          'border',
-          'boxSizing',
-          'whiteSpace',
-          'wordWrap',
-          'lineHeight',
-        ]
+      // 复制输入框的所有相关样式
+      const stylesToCopy = [
+        'position',
+        'left',
+        'top',
+        'width',
+        'height',
+        'fontFamily',
+        'fontSize',
+        'fontWeight',
+        'fontStyle',
+        'letterSpacing',
+        'wordSpacing',
+        'textTransform',
+        'padding',
+        'border',
+        'boxSizing',
+        'whiteSpace',
+        'wordWrap',
+        'lineHeight',
+      ]
 
-        for (const prop of stylesToCopy) {
-          mirror.style.setProperty(prop, inputStyles.getPropertyValue(prop))
-        }
-
-        mirror.style.position = 'absolute'
-        mirror.style.visibility = 'hidden' // 隐藏调试元素
-        mirror.style.pointerEvents = 'none'
-        mirror.style.whiteSpace = 'pre'
-        mirror.style.wordWrap = 'normal'
-        mirror.style.top = '10px' // 调试位置
-        mirror.style.left = '10px'
-        mirror.style.backgroundColor = 'rgba(255, 255, 0, 0.5)' // 黄色半透明背景
-        mirror.style.border = '1px solid red' // 红色边框
-        mirror.style.zIndex = '10000' // 确保显示在最上层
-
-        // 添加光标前的文本和一个测量点
-        const textNode = document.createTextNode(textBeforeCursor)
-        const measureSpan = document.createElement('span')
-        measureSpan.style.position = 'relative'
-        measureSpan.style.backgroundColor = 'rgba(0, 255, 0, 0.5)' // 绿色背景标记测量点
-        measureSpan.style.border = '1px solid blue' // 蓝色边框
-        measureSpan.textContent = '' // 移除可见标记
-
-        mirror.append(textNode)
-        mirror.append(measureSpan)
-        document.body.append(mirror)
-
-        const mirrorRect = mirror.getBoundingClientRect()
-        const measureSpanRect = measureSpan.getBoundingClientRect()
-
-        // 计算光标位置，使用 span 的左边缘作为光标位置
-        textWidth = measureSpanRect.left - mirrorRect.left
-
-        // 获取输入框的实际内边距，用于更精确的计算
-        const mirrorPaddingLeft = Number.parseFloat(getComputedStyle(mirror).paddingLeft) || 0
-        textWidth -= mirrorPaddingLeft
-
-        mirror.remove()
-        console.log(`Range API 测量文本宽度: ${textWidth}px`)
+      for (const prop of stylesToCopy) {
+        mirror.style.setProperty(prop, inputStyles.getPropertyValue(prop))
       }
 
-      // 方法2：Canvas 方法作为备用
-      if (textWidth === 0 || Number.isNaN(textWidth)) {
-        const canvas = document.createElement('canvas')
-        const ctx = canvas.getContext('2d')!
+      mirror.style.position = 'absolute'
+      mirror.style.visibility = 'hidden' // 隐藏调试元素
+      mirror.style.pointerEvents = 'none'
+      mirror.style.whiteSpace = 'pre'
+      mirror.style.top = '10px' // 调试位置
+      mirror.style.left = '10px'
+      mirror.style.border = '1px solid red' // 红色边框
+      mirror.style.zIndex = '10000' // 确保显示在最上层
 
-        // 设置高 DPI 支持
-        const ratio = globalThis.devicePixelRatio || 1
-        canvas.width = 1000 * ratio
-        canvas.height = 100 * ratio
-        ctx.scale(ratio, ratio)
+      // 添加光标前的文本和一个测量点
+      const textNode = document.createTextNode(textBeforeCursor)
+      const measureSpan = document.createElement('span')
+      measureSpan.style.position = 'relative'
+      measureSpan.textContent = '' // 移除可见标记
 
-        // 复制所有相关的字体样式属性
-        ctx.font = [
-          computedStyle.fontStyle,
-          computedStyle.fontVariant,
-          computedStyle.fontWeight,
-          computedStyle.fontSize,
-          computedStyle.fontFamily,
-        ].join(' ')
+      mirror.append(textNode)
+      mirror.append(measureSpan)
+      document.body.append(mirror)
 
-        ctx.textBaseline = 'middle'
-        if (computedStyle.letterSpacing !== 'normal') {
-          ctx.letterSpacing = computedStyle.letterSpacing
-        }
+      const mirrorRect = mirror.getBoundingClientRect()
+      const measureSpanRect = measureSpan.getBoundingClientRect()
 
-        textWidth = ctx.measureText(textBeforeCursor).width
-        console.log(`Canvas 测量文本宽度: ${textWidth}px`)
-      }
+      // 计算光标位置，使用 span 的左边缘作为光标位置
+      textWidth = measureSpanRect.left - mirrorRect.left
 
-      // 方法3：DOM 元素方法作为最后备用
-      if (textWidth === 0 || Number.isNaN(textWidth)) {
-        const tempDiv = document.createElement('div')
-        tempDiv.style.position = 'absolute'
-        tempDiv.style.visibility = 'hidden'
-        tempDiv.style.height = 'auto'
-        tempDiv.style.width = 'auto'
-        tempDiv.style.whiteSpace = 'pre'
+      // 获取输入框的实际内边距，用于更精确的计算
+      const mirrorPaddingLeft = Number.parseFloat(getComputedStyle(mirror).paddingLeft) || 0
+      textWidth -= mirrorPaddingLeft
 
-        // 复制输入框的所有字体相关样式
-        const stylesToCopy = [
-          'fontFamily',
-          'fontSize',
-          'fontWeight',
-          'fontStyle',
-          'letterSpacing',
-          'wordSpacing',
-          'textTransform',
-          'lineHeight',
-        ]
-        for (const prop of stylesToCopy) {
-          tempDiv.style[prop as any] = computedStyle[prop as any]
-        }
-
-        tempDiv.textContent = textBeforeCursor
-        document.body.append(tempDiv)
-        textWidth = tempDiv.getBoundingClientRect().width
-        tempDiv.remove()
-        console.log(`DOM 测量文本宽度: ${textWidth}px`)
-      }
+      mirror.remove()
     }
-    catch (error) {
-      console.error('文本宽度测量失败:', error)
+    catch {
       textWidth = textBeforeCursor.length * 8 // 回退到估算值
     }
 
@@ -240,42 +163,29 @@ function calculateCursorPosition(inputElement: HTMLInputElement) {
     const paddingLeft = Number.parseFloat(computedStyle.paddingLeft) || 0
     const borderLeft = Number.parseFloat(computedStyle.borderLeftWidth) || 0
 
-    console.log(`padding-left: ${paddingLeft}px, border-left: ${borderLeft}px`)
-    console.log(`最终文本宽度: ${textWidth}px`)
-
     // 获取输入框的实时全局位置（关键：每次都要重新获取，因为输入框会跟随模型移动）
     const currentInputRect = inputElement.getBoundingClientRect()
-
-    console.log(`输入框实时位置: left=${currentInputRect.left}, top=${currentInputRect.top}`)
-    console.log(`输入框尺寸: width=${currentInputRect.width}, height=${currentInputRect.height}`)
 
     // 计算光标的绝对屏幕坐标（基于实时的输入框位置）
     const rawCursorX = currentInputRect.left + paddingLeft + borderLeft + textWidth
     const absoluteCursorY = currentInputRect.top + currentInputRect.height / 2
 
-    console.log(`光标计算过程: ${currentInputRect.left} + ${paddingLeft} + ${borderLeft} + ${textWidth} = ${rawCursorX}`)
-
     // 限制光标位置不超出文本框右边界
     const inputRightBoundary = currentInputRect.right - paddingLeft - borderLeft
     const absoluteCursorX = Math.min(rawCursorX, inputRightBoundary)
 
-    console.log(`输入框右边界: ${inputRightBoundary}, 限制前光标X: ${rawCursorX}, 限制后光标X: ${absoluteCursorX}`)
-    console.log(`计算出的光标绝对坐标: x=${absoluteCursorX}, y=${absoluteCursorY}`)
-
     const finalCursorX = absoluteCursorX
-    console.log(`最终光标坐标: x=${finalCursorX}, y=${absoluteCursorY}`)
 
     // 使用修正后的坐标
     cursorPosition.value = { x: finalCursorX, y: absoluteCursorY }
 
     // 当输入框聚焦时，设置目光跟随光标位置
     if (isInputFocused.value) {
-      console.log(`设置目光跟随光标: (${finalCursorX}, ${absoluteCursorY})`)
       setGazeTarget(finalCursorX, absoluteCursorY)
     }
   }
-  catch (error) {
-    console.error('计算光标位置时出错:', error)
+  catch {
+    // 忽略错误
   }
 }
 
@@ -298,12 +208,11 @@ function initializeOpenAI() {
   if (apiKey.value) {
     try {
       initOpenAI(apiKey.value, baseURL.value)
-      console.log('OpenAI 初始化成功')
       // 显示欢迎消息
       showTemporaryBubble('嗨~我是06娘！快来和我聊天吧~ ✨', 4000)
     }
-    catch (error) {
-      console.error('OpenAI 初始化失败:', error)
+    catch {
+      // 忽略错误
     }
   }
   else {
@@ -349,19 +258,11 @@ async function sendMessage() {
         showBubble.value = true
         bubbleContent.value = currentResponse.value
         updateBubblePosition() // 每次更新内容时也更新气泡位置
-
-        // 开始说话动画
-        if (!isSpeaking.value) {
-          startSpeaking()
-        }
       },
       onComplete: (fullContent: string) => {
         isTyping.value = false
         bubbleContent.value = fullContent
         updateBubblePosition() // 完成时更新气泡位置
-
-        // 停止说话动画
-        stopSpeaking()
 
         // AI 回复完成后自动聚焦到输入框
         setTimeout(() => {
@@ -408,7 +309,6 @@ function showTemporaryBubble(content: string, duration: number = 3000) {
 
 // 输入框事件处理
 function handleInputFocus(event: FocusEvent) {
-  console.log('[handleInputFocus] 输入框获得焦点')
   isInputFocused.value = true
   isInputVisible.value = true // 聚焦时保持可见
   const inputElement = event.target as HTMLInputElement
@@ -416,7 +316,6 @@ function handleInputFocus(event: FocusEvent) {
 }
 
 function handleInputBlur() {
-  console.log('[handleInputBlur] 输入框失去焦点，恢复鼠标跟踪')
   isInputFocused.value = false
   // 失去焦点时恢复到鼠标追踪模式
   clearGazeTarget()
@@ -431,7 +330,6 @@ function handleInputBlur() {
 function handleInputChange(event: Event) {
   const inputElement = event.target as HTMLInputElement
   if (isInputFocused.value) {
-    console.log('[handleInputChange] 输入内容变化，重新计算光标位置')
     // 使用防抖函数避免频繁计算
     debouncedCalculateCursorPosition(inputElement)
   }
@@ -440,7 +338,6 @@ function handleInputChange(event: Event) {
 function handleInputCursorMove(event: Event) {
   const inputElement = event.target as HTMLInputElement
   if (isInputFocused.value) {
-    console.log('[handleInputCursorMove] 光标位置移动')
     // 立即计算光标位置，不使用防抖
     calculateCursorPosition(inputElement)
   }
@@ -473,7 +370,6 @@ function getCharacterTopPosition(): { x: number, y: number } {
   try {
     // 使用Live2D模型的getBounds()方法获取准确的边界信息
     const bounds = model.getBounds()
-    console.log('Model bounds:', bounds)
 
     // bounds包含了模型的实际渲染边界
     // bounds.x, bounds.y 是边界框左上角的世界坐标
@@ -493,13 +389,10 @@ function getCharacterTopPosition(): { x: number, y: number } {
       y: screenTop,
     }
   }
-  catch (error) {
-    console.log('Error getting character top position:', error)
+  catch {
     // 回退到默认位置：使用模型的基本属性估算
     const modelCenterX = canvasX.value + model.x
     const modelTop = canvasY.value + model.y - (model.height * model.scale.y) / 2
-
-    console.log(`Fallback calculation: center=(${modelCenterX}, ${modelTop})`)
 
     return {
       x: modelCenterX,
@@ -515,8 +408,6 @@ function updateBubblePosition() {
   // 气泡位置定位到角色头顶，通过CSS的transform: translate(-50%, -100%)实现底部对齐
   // 这样气泡的底部会与角色头顶对齐，并且会有一点间距（通过CSS或这里微调）
   bubblePositionY.value = characterTop.y
-
-  console.log(`Bubble position updated: (${bubblePositionX.value}, ${bubblePositionY.value})`)
 }
 
 // 计算输入框基于模型的位置
@@ -527,67 +418,20 @@ function calculateInputPosition() {
   }
 
   try {
-    // 尝试获取模型的边界信息
-    const bounds = model.getBounds()
-    console.log('Model bounds:', bounds)
-
-    // 尝试获取模型参数，寻找身体相关的参数
-    const internalModel = model.internalModel as any
-    if (internalModel) {
-      console.log('Model parameters available:')
-
-      // 尝试不同的API来获取参数信息
-      if (internalModel.parameters) {
-        internalModel.parameters.forEach((param: any, index: number) => {
-          if (param.id) {
-            console.log(`Parameter ${index}: ${param.id}`)
-          }
-        })
-      }
-      else if (internalModel.coreModel && internalModel.coreModel.parameters) {
-        for (let i = 0; i < internalModel.coreModel.getParameterCount(); i++) {
-          const paramId = internalModel.coreModel.getParameterId(i)
-          console.log(`Parameter ${i}: ${paramId}`)
-        }
-      }
-
-      // 尝试获取可绘制对象信息（drawable）
-      if (internalModel.coreModel && internalModel.coreModel.getDrawableCount) {
-        const drawableCount = internalModel.coreModel.getDrawableCount()
-        console.log(`Drawable count: ${drawableCount}`)
-
-        for (let i = 0; i < Math.min(drawableCount, 10); i++) { // 只显示前10个
-          try {
-            const drawableId = internalModel.coreModel.getDrawableId(i)
-            console.log(`Drawable ${i}: ${drawableId}`)
-          }
-          catch {
-            // 忽略错误，继续下一个
-          }
-        }
-      }
-    }
-
     // 基于模型的实际高度和位置计算胸部位置
     // model.y 是模型在canvas中的位置（相对于canvas）
     const modelCenterY = model.y
     const modelHeight = model.height * model.scale.y
-
-    console.log(`Model center Y: ${modelCenterY}, Model height: ${modelHeight}`)
-    console.log(`Canvas scale: ${canvasScale.value}`)
 
     // 胸部通常在模型中心下方约1/6到1/4的位置，输入框放在胸部下方
     const chestRelativeY = modelCenterY + modelHeight * 0.15 // 胸部位置（相对于canvas）
     const inputOffsetY = 50 // 固定的像素偏移
     const inputRelativeY = chestRelativeY + inputOffsetY // 在胸部下方（相对于canvas）
 
-    console.log(`Chest relative Y: ${chestRelativeY}, Input relative Y: ${inputRelativeY}`)
-
     // 存储相对于canvas的坐标，在模板中会加上canvasY
     inputPositionY.value = inputRelativeY
   }
-  catch (error) {
-    console.log('Error calculating input position:', error)
+  catch {
     // 回退到默认位置
     inputPositionY.value = (canvasHeight.value * canvasScale.value) * 0.6
   }
@@ -602,7 +446,6 @@ function updateGazeParameters() {
   let targetScreenX = 0
   let targetScreenY = 0
   let sourceType = ''
-
   // 如果设置了目标坐标，使用目标坐标；否则使用鼠标坐标
   if (gazeTargetX.value !== null && gazeTargetY.value !== null) {
     targetScreenX = gazeTargetX.value
@@ -636,57 +479,35 @@ function updateGazeParameters() {
       // 方法1：尝试获取眼睛相关的 drawable
       if (internalModel.coreModel && internalModel.coreModel.getDrawableCount) {
         const drawableCount = internalModel.coreModel.getDrawableCount()
-        console.log(`搜索眼睛 drawable，总数: ${drawableCount}`)
-
         for (let i = 0; i < drawableCount; i++) {
           try {
             const drawableId = internalModel.coreModel.getDrawableId(i)
             // 寻找眼睛相关的drawable（常见命名包含eye、Eye、目等）
-            if (drawableId && (drawableId.includes('Eye') || drawableId.includes('eye') || drawableId.includes('目'))) {
-              console.log(`找到眼睛相关 drawable: ${drawableId}`)
-
-              // 尝试获取drawable的位置信息
-              if (internalModel.coreModel.getDrawableVertexPositions) {
-                const vertices = internalModel.coreModel.getDrawableVertexPositions(i)
-                if (vertices && vertices.length >= 2) {
-                  // 计算drawable的中心点（取顶点的平均值）
-                  let centerX = 0; let centerY = 0
-                  const vertexCount = vertices.length / 2
-                  for (let j = 0; j < vertices.length; j += 2) {
-                    centerX += vertices[j]
-                    centerY += vertices[j + 1]
-                  }
-                  centerX /= vertexCount
-                  centerY /= vertexCount
-
-                  // 转换为屏幕坐标
-                  const worldPos = model.toGlobal({ x: centerX, y: centerY })
-                  eyeScreenX = worldPos.x
-                  eyeScreenY = worldPos.y
-
-                  console.log(`从 drawable ${drawableId} 获取到眼睛坐标: 模型(${centerX.toFixed(1)}, ${centerY.toFixed(1)}) -> 屏幕(${eyeScreenX.toFixed(1)}, ${eyeScreenY.toFixed(1)})`)
-                  break // 找到第一个眼睛就使用它
+            if (drawableId && (drawableId.includes('Eye') || drawableId.includes('eye') || drawableId.includes('目')) // 尝试获取drawable的位置信息
+              && internalModel.coreModel.getDrawableVertexPositions) {
+              const vertices = internalModel.coreModel.getDrawableVertexPositions(i)
+              if (vertices && vertices.length >= 2) {
+                // 计算drawable的中心点（取顶点的平均值）
+                let centerX = 0; let centerY = 0
+                const vertexCount = vertices.length / 2
+                for (let j = 0; j < vertices.length; j += 2) {
+                  centerX += vertices[j]
+                  centerY += vertices[j + 1]
                 }
+                centerX /= vertexCount
+                centerY /= vertexCount
+
+                // 转换为屏幕坐标
+                const worldPos = model.toGlobal({ x: centerX, y: centerY })
+                eyeScreenX = worldPos.x
+                eyeScreenY = worldPos.y
+                break // 找到第一个眼睛就使用它
               }
             }
           }
           catch {
             // 忽略单个drawable的错误，继续搜索
           }
-        }
-      }
-
-      // 方法2：尝试从参数中推断眼睛位置
-      if (eyeScreenX === canvasX.value + (canvasWidth.value * canvasScale.value) / 2) {
-        // 如果还是默认位置，尝试其他方法
-        console.log('未找到眼睛drawable，尝试从参数推断')
-
-        if (internalModel.parameters) {
-          internalModel.parameters.forEach((param: any, index: number) => {
-            if (param.id && (param.id.includes('Eye') || param.id.includes('eye'))) {
-              console.log(`找到眼睛相关参数: ${param.id}, 当前值: ${param.value}`)
-            }
-          })
         }
       }
     }
@@ -733,23 +554,6 @@ function updateGazeParameters() {
     lastTargetX.value = targetScreenX
     lastTargetY.value = targetScreenY
     lastGazeSourceType.value = sourceType
-
-    // 输出调试信息
-    if (isInputFocused.value) {
-      console.log(`[updateGazeParameters] ${sourceType}目标变化:`)
-      console.log(`  原始坐标: (${targetScreenX}, ${targetScreenY})`)
-      console.log(`  眼睛位置: (${eyeScreenX.toFixed(1)}, ${eyeScreenY.toFixed(1)})`)
-      console.log(`  投影坐标: (${projectionScreenX.toFixed(1)}, ${projectionScreenY.toFixed(1)})`)
-      console.log(`  模型坐标: (${modelX.toFixed(1)}, ${modelY.toFixed(1)}) - 缓动移动`)
-    }
-    else if (sourceType === 'Electron鼠标') {
-      console.log(`[updateGazeParameters] ${sourceType}目标变化:`)
-      console.log(`  原始坐标: (${targetScreenX}, ${targetScreenY})`)
-      console.log(`  眼睛位置: (${eyeScreenX.toFixed(1)}, ${eyeScreenY.toFixed(1)})`)
-      console.log(`  投影坐标: (${projectionScreenX.toFixed(1)}, ${projectionScreenY.toFixed(1)})`)
-      console.log(`  模型坐标: (${modelX.toFixed(1)}, ${modelY.toFixed(1)}) - 缓动移动`)
-    }
-    // 本地鼠标移动太频繁，不输出日志
   }
 }
 
@@ -766,9 +570,9 @@ function updateCanvasProperties() {
     canvas.style.position = 'absolute'
     canvas.style.left = `${canvasX.value}px`
     canvas.style.top = `${canvasY.value}px`
-
-    // 重新设置PIXI应用的尺寸
-    app.renderer.resize(newWidth, newHeight)
+    if (app.renderer) {
+      app.renderer.resize(newWidth, newHeight)
+    }
 
     // 重新调整模型位置和缩放以适应新的canvas尺寸
     if (model) {
@@ -938,118 +742,93 @@ function cancelSettings() {
   showSettings.value = false
 }
 
-// 通过Electron API获取本地文件路径
+// 获取本地模型文件路径
 function getModelURL() {
   const model_path = '06-v2.1024/06-v2.model3.json'
-  if ((globalThis as any).electronAPI) {
-    return (globalThis as any).electronAPI.getModelPath(model_path)
-  }
-  // 开发模式下的回退路径
-  return `${globalThis.location.origin}/models/${model_path}`
+  // 直接使用 public 目录下的模型文件
+  return `/models/${model_path}`
 }
 
 onMounted(async () => {
-  try {
-    // 初始化 OpenAI
-    initializeOpenAI()
+  // 初始化 OpenAI
+  initializeOpenAI()
 
-    // 监听窗口大小变化
-    const handleResize = () => {
-      windowHeight.value = window.innerHeight
-    }
-    window.addEventListener('resize', handleResize)
+  // 监听窗口大小变化
+  const handleResize = () => {
+    windowHeight.value = window.innerHeight
+  }
+  window.addEventListener('resize', handleResize)
 
-    const canvas = document.querySelector('#canvas') as HTMLCanvasElement
-    if (!canvas) {
-      return
-    }
+  const canvas = document.querySelector('#canvas') as HTMLCanvasElement
+  if (!canvas) {
+    return
+  }
 
-    // 设置初始canvas尺寸
-    const initialWidth = 400
-    const initialHeight = 600
+  // 设置初始canvas尺寸
+  const initialWidth = 400
+  const initialHeight = 600
 
-    app = new Application({
-      width: initialWidth,
-      height: initialHeight,
-      view: canvas,
-      backgroundAlpha: 0,
-      powerPreference: 'high-performance',
-      antialias: false,
-      preserveDrawingBuffer: true,
-      clearBeforeRender: true,
-      sharedTicker: true,
-    })
+  await app.init({
+    width: initialWidth,
+    height: initialHeight,
+    view: canvas,
+    backgroundAlpha: 0,
+    powerPreference: 'low-power',
+  })
+  // 限制帧率为 60fps
+  Ticker.shared.maxFPS = 0
+  Ticker.shared.minFPS = 1
 
-    // 限制帧率为 60fps
-    app.ticker.maxFPS = 30
-    app.ticker.minFPS = 1;
-    (globalThis as any).app = app
+  const modelURL = getModelURL()
+  model = await Live2DModel.from(modelURL, {
+    ticker: Ticker.shared,
+  })
+  model.setRenderer(app.renderer)
+  app.stage.addChild(model)
 
-    const modelURL = getModelURL()
-    model = await Live2DModel.from(modelURL, {
-      ticker: Ticker.shared,
-    })
+  // 将模型设为全局变量，方便外部访问
+  if (typeof globalThis !== 'undefined') {
+    (globalThis as any).live2dModel = model
+  }
 
-    app.stage.addChild(model)
+  // 设置模型显示
+  model.anchor.set(0.5, 0.5)
+  model.position.set(initialWidth / 2, initialHeight / 2)
 
-    // 将模型设为全局变量，方便外部访问
-    if (typeof globalThis !== 'undefined') {
-      (globalThis as any).live2dModel = model
-    }
+  // 确保模型在可视范围内
+  baseModelScale = Math.min(initialWidth / model.width, initialHeight / model.height) * 0.8
+  model.scale.set(baseModelScale, baseModelScale)
 
-    // 设置模型显示
-    model.anchor.set(0.5, 0.5)
-    model.position.set(initialWidth / 2, initialHeight / 2)
+  // 初始化canvas位置和尺寸（仅在localStorage为空时设置默认值）
+  if (canvasWidth.value === 800 && canvasHeight.value === 1200) {
+    canvasWidth.value = initialWidth
+    canvasHeight.value = initialHeight
+  }
+  if (canvasX.value === 0 && canvasY.value === 0) {
+    canvasX.value = (window.innerWidth - canvasWidth.value * canvasScale.value) / 2
+    canvasY.value = (window.innerHeight - canvasHeight.value * canvasScale.value) / 2
+  }
 
-    // 确保模型在可视范围内
-    baseModelScale = Math.min(initialWidth / model.width, initialHeight / model.height) * 0.8
-    model.scale.set(baseModelScale, baseModelScale)
-
-    // 检查模型的可用方法和属性
-    console.log('Live2D Model methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(model)))
-    console.log('Live2D Model object:', model)
-
-    // 尝试查找说话相关的方法
-    if (typeof model.speak === 'function') {
-      console.log('Found speak method!')
-    }
-    if (typeof model.motion === 'function') {
-      console.log('Found motion method!')
-    }
-
-    // 初始化canvas位置和尺寸（仅在localStorage为空时设置默认值）
-    if (canvasWidth.value === 800 && canvasHeight.value === 1200) {
-      canvasWidth.value = initialWidth
-      canvasHeight.value = initialHeight
-    }
-    if (canvasX.value === 0 && canvasY.value === 0) {
-      canvasX.value = (window.innerWidth - canvasWidth.value * canvasScale.value) / 2
-      canvasY.value = (window.innerHeight - canvasHeight.value * canvasScale.value) / 2
-    }
-
-    // 应用初始设置
-    updateCanvasProperties()
-
+  // 应用初始设置
+  updateCanvasProperties()
+  if (app.ticker) {
     // 启动目光追踪更新循环
     app.ticker.add(updateGazeParameters)
     // 启动气泡位置更新循环
     app.ticker.add(updateBubblePosition)
-
-    // 计算并设置输入框位置
-    calculateInputPosition()
-
-    // 监听electron后端的全局鼠标位置
-    if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.onMousePosition) {
-      (globalThis as any).electronAPI.onMousePosition((position: { x: number, y: number }) => {
-        // 如果输入框聚焦中，忽略鼠标位置事件，让光标跟踪继续工作
-        if (!isInputFocused.value) {
-          setGazeTarget(position.x, position.y)
-        }
-      })
-    }
   }
-  catch {
-    // 模型加载失败
+
+  // 计算并设置输入框位置
+  calculateInputPosition()
+
+  // 监听electron后端的全局鼠标位置
+  if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.onMousePosition) {
+    (globalThis as any).electronAPI.onMousePosition((position: { x: number, y: number }) => {
+      // 如果输入框聚焦中，忽略鼠标位置事件，让光标跟踪继续工作
+      if (!isInputFocused.value) {
+        setGazeTarget(position.x, position.y)
+      }
+    })
   }
 })
 
@@ -1060,8 +839,8 @@ onUnmounted(() => {
   }
   // 清理ticker
   if (app) {
-    app.ticker.remove(updateGazeParameters)
-    app.ticker.remove(updateBubblePosition)
+    Ticker.shared.remove(updateGazeParameters)
+    Ticker.shared.remove(updateBubblePosition)
   }
   // 清理全局函数和变量
   if (typeof globalThis !== 'undefined') {
@@ -1240,7 +1019,6 @@ onUnmounted(() => {
   border-radius: 8px;
   font-size: 14px;
   background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
   outline: none;
   -webkit-app-region: no-drag;
   pointer-events: auto;
@@ -1265,7 +1043,6 @@ onUnmounted(() => {
   border: none;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
   font-size: 18px;
   cursor: pointer;
   display: flex;
@@ -1301,7 +1078,6 @@ onUnmounted(() => {
   font-size: 14px;
   line-height: 1.4;
   color: #333;
-  backdrop-filter: blur(10px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   word-wrap: break-word;
   white-space: pre-wrap;
@@ -1366,7 +1142,6 @@ onUnmounted(() => {
   padding: 24px;
   min-width: 320px;
   max-width: 400px;
-  backdrop-filter: blur(10px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
   pointer-events: auto;
 }
