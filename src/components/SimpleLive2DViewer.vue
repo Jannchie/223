@@ -383,14 +383,12 @@ async function sendMessage() {
       },
       onError: (error: string) => {
         isTyping.value = false
-        stopSpeaking() // 出错时也要停止说话动画
         showTemporaryBubble(`错误: ${error}`)
       },
     })
   }
   catch {
     isTyping.value = false
-    stopSpeaking() // 出错时也要停止说话动画
     showTemporaryBubble('发送消息失败')
   }
 }
@@ -406,125 +404,6 @@ function showTemporaryBubble(content: string, duration: number = 3000) {
   bubbleTimeout.value = setTimeout(() => {
     showBubble.value = false
   }, duration)
-}
-
-// 开始说话动画
-function startSpeaking() {
-  if (!model) {
-    return
-  }
-
-  isSpeaking.value = true
-
-  // 尝试使用 speak 方法
-  if (typeof model.speak === 'function') {
-    console.log('Using model.speak() method')
-    model.speak()
-  }
-  // 或者尝试通过参数控制口型
-  else if (model.internalModel) {
-    console.log('Controlling mouth parameters manually')
-    controlMouthAnimation(true)
-  }
-}
-
-// 停止说话动画
-function stopSpeaking() {
-  if (!model) {
-    return
-  }
-
-  isSpeaking.value = false
-
-  // 清除说话定时器
-  if (speakingTimer.value) {
-    clearTimeout(speakingTimer.value)
-    speakingTimer.value = null
-  }
-
-  // 停止说话动画
-  if (typeof model.speak === 'function') {
-    // 一些库可能有 stopSpeak 方法
-    if (typeof model.stopSpeak === 'function') {
-      model.stopSpeak()
-    }
-  }
-  else if (model.internalModel) {
-    controlMouthAnimation(false)
-  }
-}
-
-// 手动控制嘴部参数
-function controlMouthAnimation(speaking: boolean) {
-  if (!model || !model.internalModel) {
-    return
-  }
-
-  try {
-    const internalModel = model.internalModel as any
-
-    // 常见的嘴部参数名称
-    const mouthParamNames = [
-      'PARAM_MOUTH_OPEN_Y',
-      'ParamMouthOpenY',
-      'mouth_open_y',
-      'MouthOpenY',
-      'PARAM_MOUTH_FORM',
-      'ParamMouthForm',
-      'mouth_form',
-    ]
-
-    if (speaking) {
-      // 开始说话动画 - 随机嘴型变化
-      const animateMouth = () => {
-        if (!isSpeaking.value) {
-          return
-        }
-
-        for (const paramName of mouthParamNames) {
-          try {
-            if (internalModel.coreModel && internalModel.coreModel.getParameterIndex) {
-              const paramIndex = internalModel.coreModel.getParameterIndex(paramName)
-              if (paramIndex >= 0) {
-                // 随机嘴型开合程度 (0.2 到 1.0)
-                const openValue = 0.2 + Math.random() * 0.8
-                internalModel.coreModel.setParameterValueByIndex(paramIndex, openValue)
-                console.log(`Set ${paramName} to ${openValue}`)
-              }
-            }
-          }
-          catch {
-            // 忽略错误，尝试下一个参数名
-          }
-        }
-
-        // 继续动画
-        speakingTimer.value = setTimeout(animateMouth, 100 + Math.random() * 100)
-      }
-
-      animateMouth()
-    }
-    else {
-      // 停止说话 - 重置嘴型
-      for (const paramName of mouthParamNames) {
-        try {
-          if (internalModel.coreModel && internalModel.coreModel.getParameterIndex) {
-            const paramIndex = internalModel.coreModel.getParameterIndex(paramName)
-            if (paramIndex >= 0) {
-              internalModel.coreModel.setParameterValueByIndex(paramIndex, 0)
-              console.log(`Reset ${paramName} to 0`)
-            }
-          }
-        }
-        catch {
-          // 忽略错误
-        }
-      }
-    }
-  }
-  catch (error) {
-    console.log('Error controlling mouth animation:', error)
-  }
 }
 
 // 输入框事件处理
@@ -608,10 +487,6 @@ function getCharacterTopPosition(): { x: number, y: number } {
     // 需要考虑canvas的位置和缩放
     const screenCenterX = canvasX.value + modelTopWorldX
     const screenTop = canvasY.value + modelTopWorldY
-
-    console.log(`Model bounds: x=${bounds.x}, y=${bounds.y}, width=${bounds.width}, height=${bounds.height}`)
-    console.log(`Model top world coords: (${modelTopWorldX}, ${modelTopWorldY})`)
-    console.log(`Model top screen coords: (${screenCenterX}, ${screenTop})`)
 
     return {
       x: screenCenterX,

@@ -42,8 +42,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      url: path.resolve(import.meta.dirname, 'src/utils/url-polyfill.js'),
-      path: 'path-browserify',
+      'url': path.resolve(import.meta.dirname, 'src/utils/url-polyfill.js'),
+      'path': 'path-browserify',
     },
   },
   optimizeDeps: {
