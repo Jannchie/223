@@ -43,6 +43,7 @@ let mouseTrackingInterval: NodeJS.Timeout | null = null
 let lastMousePosition = { x: -1, y: -1 } // 记录上次鼠标位置
 let staticServer: http.Server | null = null
 let serverPort = 0 // 动态分配的端口号
+let alwaysOnTopInterval: NodeJS.Timeout | null = null
 
 // GPU 和性能优化配置
 app.commandLine.appendSwitch('--enable-gpu-rasterization')
@@ -73,6 +74,7 @@ async function createWindow() {
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
+    type: 'toolbar', // 在某些系统上有助于保持置顶
     icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
@@ -81,8 +83,26 @@ async function createWindow() {
     },
   })
 
-  // 初始设置：完全穿透，让底层应用接收所有鼠标事件
-  win.setIgnoreMouseEvents(true, { forward: true })
+  // 强制确保窗口始终置顶
+  win.setAlwaysOnTop(true, 'screen-saver')
+
+  // 监听焦点变化，确保保持置顶
+  win.on('blur', () => {
+    if (win && !win.isDestroyed()) {
+      win.setAlwaysOnTop(false)
+      win.setAlwaysOnTop(true, 'screen-saver')
+    }
+  })
+
+  // 定时检查确保窗口保持置顶（每5秒检查一次）
+  alwaysOnTopInterval = setInterval(() => {
+    if (win && !win.isDestroyed() && !win.isAlwaysOnTop()) {
+      win.setAlwaysOnTop(true, 'screen-saver')
+    }
+  }, 5000)
+
+  // 初始设置：不穿透，让前端控制穿透逻辑
+  win.setIgnoreMouseEvents(false, { forward: false })
 
   // 监听渲染进程的消息来动态控制鼠标事件
   win.webContents.on('ipc-message', (_, channel, data) => {
@@ -91,20 +111,8 @@ async function createWindow() {
     }
   })
 
-  // 添加鼠标进入/离开窗口的事件监听
-  win.on('mouse-enter', () => {
-    // 鼠标进入窗口时，先检查是否在交互区域
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('mouse-enter-window')
-    }
-  })
-
-  win.on('mouse-leave', () => {
-    // 鼠标离开窗口时，恢复完全穿透
-    if (win && !win.isDestroyed()) {
-      win.setIgnoreMouseEvents(true, { forward: true })
-    }
-  })
+  // 移除无效的鼠标进入/离开窗口事件监听
+  // 可以在渲染进程中使用 'mouseenter' 和 'mouseleave' 事件，或继续使用全局鼠标跟踪
 
   // Test active push message to Renderer-process.
   win.webContents.on('did-finish-load', () => {
@@ -253,6 +261,14 @@ function stopMouseTracking() {
   }
 }
 
+// 停止置顶检查
+function stopAlwaysOnTopCheck() {
+  if (alwaysOnTopInterval) {
+    clearInterval(alwaysOnTopInterval)
+    alwaysOnTopInterval = null
+  }
+}
+
 // 创建本地静态文件服务器
 function createStaticServer(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -337,6 +353,7 @@ function stopStaticServer() {
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
   stopMouseTracking()
+  stopAlwaysOnTopCheck()
   stopStaticServer()
   if (process.platform !== 'darwin') {
     app.quit()
@@ -406,6 +423,7 @@ function getContentType(filePath: string): string {
 // 应用退出时清理
 app.on('before-quit', () => {
   stopMouseTracking()
+  stopAlwaysOnTopCheck()
   stopStaticServer()
   if (tray) {
     tray.destroy()
