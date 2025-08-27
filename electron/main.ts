@@ -70,13 +70,28 @@ function createWindow() {
     },
   })
 
-  // 设置鼠标事件处理：透明区域可以接收事件，但允许右键穿透
-  win.setIgnoreMouseEvents(false, { forward: true })
+  // 初始设置：完全穿透，让底层应用接收所有鼠标事件
+  win.setIgnoreMouseEvents(true, { forward: true })
 
   // 监听渲染进程的消息来动态控制鼠标事件
   win.webContents.on('ipc-message', (_, channel, data) => {
     if (channel === 'set-ignore-mouse-events') {
-      win?.setIgnoreMouseEvents(data.ignore, { forward: data.forward || true })
+      win?.setIgnoreMouseEvents(data.ignore, { forward: data.forward !== false })
+    }
+  })
+
+  // 添加鼠标进入/离开窗口的事件监听
+  win.on('mouse-enter', () => {
+    // 鼠标进入窗口时，先检查是否在交互区域
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('mouse-enter-window')
+    }
+  })
+
+  win.on('mouse-leave', () => {
+    // 鼠标离开窗口时，恢复完全穿透
+    if (win && !win.isDestroyed()) {
+      win.setIgnoreMouseEvents(true, { forward: true })
     }
   })
 
@@ -244,8 +259,8 @@ app.on('activate', () => {
   }
 })
 
-// Disable hardware acceleration for WSL compatibility
-app.disableHardwareAcceleration()
+// Enable hardware acceleration for better performance
+// app.disableHardwareAcceleration() // Commented out for better Live2D performance
 
 // eslint-disable-next-line unicorn/prefer-top-level-await
 app.whenReady().then(() => {

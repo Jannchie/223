@@ -594,15 +594,28 @@ function checkMouseInInteractiveArea(clientX: number, clientY: number): boolean 
   return inCanvas || inInput
 }
 
+// 控制鼠标穿透的函数
+function setMouseEventTransparency(shouldIgnore: boolean) {
+  if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.setIgnoreMouseEvents) {
+    (globalThis as any).electronAPI.setIgnoreMouseEvents({
+      ignore: shouldIgnore,
+      forward: true
+    })
+  }
+}
+
 // 鼠标移动事件处理（主要用于拖拽）
 function handleMouseMove(event: MouseEvent) {
   // 更新鼠标位置
   mouseX.value = event.clientX
   mouseY.value = event.clientY
 
-  // 检查是否应该显示输入框
+  // 检查是否应该显示输入框和控制鼠标穿透
   const shouldShowInput = checkMouseInInteractiveArea(event.clientX, event.clientY)
   isInputVisible.value = shouldShowInput
+  
+  // 根据是否在交互区域控制鼠标穿透
+  setMouseEventTransparency(!shouldShowInput)
 
   // 如果正在拖拽，更新canvas位置
   if (isDragging.value) {
@@ -652,6 +665,13 @@ function handleMouseUp(_: MouseEvent) {
   if (isDragging.value) {
     isDragging.value = false
   }
+}
+
+// 鼠标离开处理
+function handleMouseLeave() {
+  isInputVisible.value = false
+  // 鼠标完全离开应用区域时，恢复完全穿透
+  setMouseEventTransparency(true)
 }
 
 // 滚轮事件处理（以鼠标位置为中心缩放canvas）
@@ -773,12 +793,13 @@ onMounted(async () => {
     height: initialHeight,
     view: canvas,
     backgroundAlpha: 0,
-    powerPreference: 'low-power',
-    preference: 'webgl', // 强制使用 WebGL 渲染器
+    powerPreference: 'high-performance', // 使用高性能 GPU
+    preference: 'webgl2', // 优先使用 WebGL2，回退到 WebGL
+    antialias: false, // 关闭抗锯齿以提升性能
   })
-  // 限制帧率为 60fps
-  Ticker.shared.maxFPS = 0
-  Ticker.shared.minFPS = 1
+  // 限制帧率为 60fps 以平衡性能和流畅度
+  Ticker.shared.maxFPS = 60
+  // 移除不必要的 minFPS 设置
 
   const modelURL = getModelURL()
   model = await Live2DModel.from(modelURL, {
@@ -870,7 +891,7 @@ onUnmounted(() => {
     @mousemove="handleMouseMove"
     @mouseover="handleMouseMove"
     @mouseout="handleMouseMove"
-    @mouseleave="isInputVisible = false"
+    @mouseleave="handleMouseLeave"
     @mousedown="handleMouseDown"
     @mouseup="handleMouseUp"
     @wheel="handleWheel"

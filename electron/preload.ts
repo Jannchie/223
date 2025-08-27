@@ -16,6 +16,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeMousePositionListener: () => {
     ipcRenderer.removeAllListeners('mouse-position')
   },
+
+  // 控制鼠标事件穿透
+  setIgnoreMouseEvents: (options: { ignore: boolean, forward?: boolean }) => {
+    ipcRenderer.send('set-ignore-mouse-events', options)
+  },
+
+  // 监听窗口鼠标进入事件
+  onMouseEnterWindow: (callback: () => void) => {
+    ipcRenderer.on('mouse-enter-window', callback)
+  },
 })
 
 contextBridge.exposeInMainWorld('ipcRenderer', {
