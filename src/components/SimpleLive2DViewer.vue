@@ -3,7 +3,7 @@
 import { Live2DModel } from '@jannchie/pixi-live2d-display'
 import { useLocalStorage } from '@vueuse/core'
 import { Application, Ticker } from 'pixi.js'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { getChatInstance, initOpenAI } from '../utils/openai'
 
 // 输入框相关状态
@@ -591,7 +591,9 @@ function checkMouseInInteractiveArea(clientX: number, clientY: number): boolean 
   const inCanvas = isPointInCanvas(clientX, clientY)
   // 检查是否在输入框区域
   const inInput = isPointInInput(clientX, clientY)
-  return inCanvas || inInput
+  // 检查是否在设置面板区域
+  const inSettings = isPointInSettings(clientX, clientY)
+  return inCanvas || inInput || inSettings
 }
 
 // 控制鼠标穿透的函数
@@ -599,7 +601,7 @@ function setMouseEventTransparency(shouldIgnore: boolean) {
   if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.setIgnoreMouseEvents) {
     (globalThis as any).electronAPI.setIgnoreMouseEvents({
       ignore: shouldIgnore,
-      forward: true
+      forward: true,
     })
   }
 }
@@ -613,7 +615,7 @@ function handleMouseMove(event: MouseEvent) {
   // 检查是否应该显示输入框和控制鼠标穿透
   const shouldShowInput = checkMouseInInteractiveArea(event.clientX, event.clientY)
   isInputVisible.value = shouldShowInput
-  
+
   // 根据是否在交互区域控制鼠标穿透
   setMouseEventTransparency(!shouldShowInput)
 
@@ -725,6 +727,22 @@ function isPointInInput(clientX: number, clientY: number): boolean {
           && clientY >= rect.top && clientY <= rect.bottom)
 }
 
+// 检查点击是否在设置面板区域内
+function isPointInSettings(clientX: number, clientY: number): boolean {
+  if (!showSettings.value) {
+    return false
+  }
+
+  const settingsOverlay = document.querySelector('.settings-overlay') as HTMLElement
+  if (!settingsOverlay) {
+    return false
+  }
+
+  const rect = settingsOverlay.getBoundingClientRect()
+  return (clientX >= rect.left && clientX <= rect.right
+          && clientY >= rect.top && clientY <= rect.bottom)
+}
+
 // 点击事件处理
 function handleClick(event: MouseEvent) {
   // 如果点击在输入框区域内，不阻止事件，让输入框正常响应
@@ -765,7 +783,13 @@ function cancelSettings() {
 // 获取本地模型文件路径
 function getModelURL() {
   const model_path = '06-v2.1024/06-v2.model3.json'
-  // 直接使用 public 目录下的模型文件
+
+  // 在 Electron 环境中使用自定义协议
+  if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.getModelPath) {
+    return (globalThis as any).electronAPI.getModelPath(model_path)
+  }
+
+  // 在开发环境或浏览器中使用相对路径
   return `/models/${model_path}`
 }
 
@@ -778,6 +802,33 @@ onMounted(async () => {
     windowHeight.value = window.innerHeight
   }
   window.addEventListener('resize', handleResize)
+
+  // 监听全局鼠标移动事件，用于处理 Modal 区域的鼠标穿透
+  const handleGlobalMouseMove = (event: MouseEvent) => {
+    // 更新鼠标位置
+    mouseX.value = event.clientX
+    mouseY.value = event.clientY
+
+    // 检查是否应该显示输入框和控制鼠标穿透
+    const shouldShowInput = checkMouseInInteractiveArea(event.clientX, event.clientY)
+    isInputVisible.value = shouldShowInput
+
+    // 根据是否在交互区域控制鼠标穿透
+    setMouseEventTransparency(!shouldShowInput)
+  }
+
+  // 只在设置面板显示时监听全局鼠标事件
+  const watchSettings = () => {
+    if (showSettings.value) {
+      document.addEventListener('mousemove', handleGlobalMouseMove, { passive: true })
+    }
+    else {
+      document.removeEventListener('mousemove', handleGlobalMouseMove)
+    }
+  }
+
+  // 监听 showSettings 变化
+  watch(showSettings, watchSettings, { immediate: true })
 
   const canvas = document.querySelector('#canvas') as HTMLCanvasElement
   if (!canvas) {
@@ -794,7 +845,6 @@ onMounted(async () => {
     view: canvas,
     backgroundAlpha: 0,
     powerPreference: 'high-performance', // 使用高性能 GPU
-    preference: 'webgl2', // 优先使用 WebGL2，回退到 WebGL
     antialias: false, // 关闭抗锯齿以提升性能
   })
   // 限制帧率为 60fps 以平衡性能和流畅度
@@ -802,11 +852,30 @@ onMounted(async () => {
   // 移除不必要的 minFPS 设置
 
   const modelURL = getModelURL()
-  model = await Live2DModel.from(modelURL, {
-    ticker: Ticker.shared,
-  })
-  model.setRenderer(app.renderer)
-  app.stage.addChild(model)
+  console.log('Loading model from:', modelURL)
+
+  // 带重试的模型加载，以防服务器还未准备好
+  let retries = 3
+  while (retries > 0) {
+    try {
+      model = await Live2DModel.from(modelURL, {
+        ticker: Ticker.shared,
+      })
+      console.log('Model loaded successfully')
+      model.setRenderer(app.renderer)
+      app.stage.addChild(model)
+      break
+    }
+    catch (error) {
+      console.error(`Model loading failed, retries left: ${retries - 1}`, error)
+      retries--
+      if (retries === 0) {
+        throw error
+      }
+      // 等待 1 秒后重试
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    }
+  }
 
   // 将模型设为全局变量，方便外部访问
   if (typeof globalThis !== 'undefined') {
@@ -859,6 +928,9 @@ onUnmounted(() => {
   if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.removeMousePositionListener) {
     (globalThis as any).electronAPI.removeMousePositionListener()
   }
+
+  // 清理全局鼠标事件监听器
+  document.removeEventListener('mousemove', () => {})
   // 清理ticker
   if (app) {
     Ticker.shared.remove(updateGazeParameters)

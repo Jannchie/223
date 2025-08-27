@@ -1,5 +1,6 @@
 /* eslint-disable node/prefer-global/process */
 import fs from 'node:fs'
+import http from 'node:http'
 import path from 'node:path'
 // import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
@@ -40,6 +41,8 @@ let win: BrowserWindow | null
 let tray: Tray | null = null
 let mouseTrackingInterval: NodeJS.Timeout | null = null
 let lastMousePosition = { x: -1, y: -1 } // 记录上次鼠标位置
+let staticServer: http.Server | null = null
+let serverPort = 0 // 动态分配的端口号
 
 // GPU 和性能优化配置
 app.commandLine.appendSwitch('--enable-gpu-rasterization')
@@ -49,7 +52,14 @@ app.commandLine.appendSwitch('--disable-backgrounding-occluded-windows')
 // 减少 GPU stall
 app.commandLine.appendSwitch('--max-gum-fps=30')
 
-function createWindow() {
+async function createWindow() {
+  // 先启动静态文件服务器
+  try {
+    await createStaticServer()
+  } catch (error) {
+    console.error('Failed to start static server:', error)
+  }
+
   // 获取主显示器的完整尺寸（包括任务栏区域）
   const primaryDisplay = screen.getPrimaryDisplay()
   const { width, height } = primaryDisplay.bounds
@@ -98,6 +108,8 @@ function createWindow() {
   // Test active push message to Renderer-process.
   win.webContents.on('did-finish-load', () => {
     win?.webContents.send('main-process-message', (new Date()).toLocaleString())
+    // 将服务器端口发送给渲染进程
+    win?.webContents.send('static-server-port', serverPort)
   })
 
   // Enable dev tools in development mode
@@ -240,11 +252,89 @@ function stopMouseTracking() {
   }
 }
 
+// 创建本地静态文件服务器
+function createStaticServer(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const publicPath = VITE_DEV_SERVER_URL 
+      ? (process.env.VITE_PUBLIC || path.join(process.env.APP_ROOT, 'public'))
+      : RENDERER_DIST
+
+    staticServer = http.createServer((req, res) => {
+      // 解析请求的 URL
+      const urlPath = req.url || '/'
+      const filePath = path.join(publicPath, urlPath)
+      
+      // 安全检查：确保请求的文件在允许的目录内
+      const normalizedPath = path.normalize(filePath)
+      const normalizedPublicPath = path.normalize(publicPath)
+      
+      if (!normalizedPath.startsWith(normalizedPublicPath)) {
+        res.writeHead(403, { 'Content-Type': 'text/plain' })
+        res.end('Forbidden')
+        return
+      }
+
+      try {
+        // 检查文件是否存在
+        if (!fs.existsSync(filePath)) {
+          res.writeHead(404, { 'Content-Type': 'text/plain' })
+          res.end('Not Found')
+          return
+        }
+
+        // 获取文件内容和类型
+        const data = fs.readFileSync(filePath)
+        const contentType = getContentType(filePath)
+
+        // 设置 CORS 头部，允许跨域访问
+        res.writeHead(200, {
+          'Content-Type': contentType,
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        })
+        
+        res.end(data)
+      } catch (error) {
+        console.error('Error serving file:', error)
+        res.writeHead(500, { 'Content-Type': 'text/plain' })
+        res.end('Internal Server Error')
+      }
+    })
+
+    // 监听动态端口
+    staticServer.listen(0, '127.0.0.1', () => {
+      const address = staticServer?.address()
+      if (address && typeof address === 'object') {
+        serverPort = address.port
+        console.log(`Static file server running at http://127.0.0.1:${serverPort}`)
+        resolve(serverPort)
+      } else {
+        reject(new Error('Failed to get server port'))
+      }
+    })
+
+    staticServer.on('error', (error) => {
+      console.error('Static server error:', error)
+      reject(error)
+    })
+  })
+}
+
+// 停止静态文件服务器
+function stopStaticServer() {
+  if (staticServer) {
+    staticServer.close()
+    staticServer = null
+  }
+}
+
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
   stopMouseTracking()
+  stopStaticServer()
   if (process.platform !== 'darwin') {
     app.quit()
     win = null
@@ -267,7 +357,11 @@ app.whenReady().then(() => {
   // 注册自定义协议来处理本地文件
   protocol.handle('app', (request) => {
     const url = request.url.slice('app://'.length)
-    const filePath = path.join(process.env.VITE_PUBLIC || path.join(process.env.APP_ROOT, 'public'), url)
+    // 在生产环境使用 RENDERER_DIST，开发环境使用 VITE_PUBLIC
+    const publicPath = VITE_DEV_SERVER_URL 
+      ? (process.env.VITE_PUBLIC || path.join(process.env.APP_ROOT, 'public'))
+      : RENDERER_DIST
+    const filePath = path.join(publicPath, url)
 
     try {
       // 检查文件是否存在
@@ -309,6 +403,7 @@ function getContentType(filePath: string): string {
 // 应用退出时清理
 app.on('before-quit', () => {
   stopMouseTracking()
+  stopStaticServer()
   if (tray) {
     tray.destroy()
     tray = null

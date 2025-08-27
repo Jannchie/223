@@ -1,9 +1,20 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 // --------- Expose some API to the Renderer process ---------
+let staticServerPort = 0
+
+// 监听服务器端口消息
+ipcRenderer.on('static-server-port', (_, port: number) => {
+  staticServerPort = port
+})
+
 contextBridge.exposeInMainWorld('electronAPI', {
   getModelPath: (modelName: string) => {
-    // 使用自定义协议来加载本地文件
+    // 如果有服务器端口，使用 HTTP 协议；否则使用自定义协议
+    if (staticServerPort > 0) {
+      return `http://127.0.0.1:${staticServerPort}/models/${modelName}`
+    }
+    // 回退到自定义协议（用于开发环境）
     return `app://models/${modelName}`
   },
 
