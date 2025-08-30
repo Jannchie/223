@@ -1,12 +1,12 @@
 /**
  * 人设管理服务
  * 负责管理角色信息、系统提示词和人设配置
+ * 现在使用 IndexedDB 作为存储后端
  */
 
 import type { Character, CharacterService } from '../types/chat'
-
-const STORAGE_KEY = 'chat-characters'
-const CURRENT_CHARACTER_KEY = 'current-character-id'
+import { repositories } from '../composables/useDatabase'
+import { initializeDatabase } from '../db'
 
 // 默认的 06 娘人设
 const DEFAULT_CHARACTER: Omit<Character, 'id' | 'createdAt' | 'updatedAt'> = {
@@ -42,223 +42,302 @@ const DEFAULT_CHARACTER: Omit<Character, 'id' | 'createdAt' | 'updatedAt'> = {
   personality: {
     traits: ['活泼', '开朗', '调皮', '关心朋友', '可爱'],
     relationships: {
-      '饼饼': '很关心的朋友，总是鼓励她学习Live2D建模',
-      '私期': '最喜欢的画师，经常夸奖她的画风'
+      饼饼: '很关心的朋友，总是鼓励她学习Live2D建模',
+      私期: '最喜欢的画师，经常夸奖她的画风',
     },
     preferences: {
-      '聊天风格': '轻松活泼，使用可爱的语气词',
-      '回复长度': '1-3句话，保持简洁',
-      '态度': '友善鼓励，有自己的个性'
-    }
-  }
+      聊天风格: '轻松活泼，使用可爱的语气词',
+      回复长度: '1-3句话，保持简洁',
+      话题偏好: 'Live2D建模、画画、日常聊天',
+    },
+  },
 }
 
 class CharacterServiceImpl implements CharacterService {
-  private characters: Map<string, Character> = new Map()
   private currentCharacterId: string | null = null
+  private initialized = false
 
   constructor() {
-    this.loadFromStorage()
-    this.initializeDefaultCharacter()
+    this._initialize()
   }
 
-  private generateId(): string {
-    return Date.now().toString() + Math.random().toString(36).substring(2)
+  async initialize(): Promise<void> {
+    return this._initialize()
   }
 
-  private loadFromStorage(): void {
+  private async _initialize(): Promise<void> {
+    if (this.initialized) {
+      return
+    }
+
     try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) {
-        const charactersArray: Character[] = JSON.parse(stored)
-        this.characters.clear()
-        charactersArray.forEach(char => {
-          this.characters.set(char.id, char)
-        })
+      // 初始化数据库
+      await initializeDatabase()
+
+      // 确保至少有默认角色
+      await this.ensureDefaultCharacter()
+
+      // 获取当前角色
+      await this.loadCurrentCharacter()
+
+      this.initialized = true
+    }
+    catch (error) {
+      console.error('角色服务初始化失败:', error)
+      throw error
+    }
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initialized) {
+      await this._initialize()
+    }
+  }
+
+  private async ensureDefaultCharacter(): Promise<void> {
+    const characters = await repositories.characters.getAll()
+    if (characters.length === 0) {
+      console.log('创建默认角色...')
+      const defaultChar = await repositories.characters.create(DEFAULT_CHARACTER)
+      this.currentCharacterId = defaultChar.id
+    }
+  }
+
+  private async loadCurrentCharacter(): Promise<void> {
+    if (!this.currentCharacterId) {
+      // 获取第一个角色作为当前角色
+      const characters = await repositories.characters.getAll()
+      if (characters.length > 0) {
+        this.currentCharacterId = characters[0].id
       }
+    }
+  }
 
-      const currentId = localStorage.getItem(CURRENT_CHARACTER_KEY)
-      if (currentId && this.characters.has(currentId)) {
-        this.currentCharacterId = currentId
+  async getCharacter(id: string): Promise<Character | null> {
+    await this.ensureInitialized()
+    return await repositories.characters.getById(id)
+  }
+
+  async getAllCharacters(): Promise<Character[]> {
+    await this.ensureInitialized()
+    return await repositories.characters.getAll()
+  }
+
+  async createCharacter(character: Omit<Character, 'id' | 'createdAt' | 'updatedAt'>): Promise<Character> {
+    await this.ensureInitialized()
+
+    // 检查名称是否已存在
+    const exists = await repositories.characters.nameExists(character.name)
+    if (exists) {
+      throw new Error(`角色名称 "${character.name}" 已存在`)
+    }
+
+    return await repositories.characters.create(character)
+  }
+
+  async updateCharacter(id: string, updates: Partial<Character>): Promise<Character> {
+    await this.ensureInitialized()
+
+    // 如果更新名称，检查是否与其他角色冲突
+    if (updates.name) {
+      const exists = await repositories.characters.nameExists(updates.name, id)
+      if (exists) {
+        throw new Error(`角色名称 "${updates.name}" 已被其他角色使用`)
       }
-    } catch (error) {
-      console.error('加载人设数据失败:', error)
-    }
-  }
-
-  private saveToStorage(): void {
-    try {
-      const charactersArray = Array.from(this.characters.values())
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(charactersArray))
-      
-      if (this.currentCharacterId) {
-        localStorage.setItem(CURRENT_CHARACTER_KEY, this.currentCharacterId)
-      }
-    } catch (error) {
-      console.error('保存人设数据失败:', error)
-    }
-  }
-
-  private initializeDefaultCharacter(): void {
-    // 如果没有任何人设，创建默认的 06 娘
-    if (this.characters.size === 0) {
-      const defaultChar = this.createCharacter(DEFAULT_CHARACTER)
-      this.setCurrentCharacter(defaultChar.id)
-    }
-    
-    // 如果没有当前人设，使用第一个
-    if (!this.currentCharacterId && this.characters.size > 0) {
-      const firstChar = Array.from(this.characters.values())[0]
-      this.setCurrentCharacter(firstChar.id)
-    }
-  }
-
-  getCharacter(id: string): Character | null {
-    return this.characters.get(id) || null
-  }
-
-  getAllCharacters(): Character[] {
-    return Array.from(this.characters.values()).sort((a, b) => b.updatedAt - a.updatedAt)
-  }
-
-  createCharacter(character: Omit<Character, 'id' | 'createdAt' | 'updatedAt'>): Character {
-    const id = this.generateId()
-    const now = Date.now()
-    
-    const newCharacter: Character = {
-      ...character,
-      id,
-      createdAt: now,
-      updatedAt: now
     }
 
-    this.characters.set(id, newCharacter)
-    this.saveToStorage()
-    
-    return newCharacter
-  }
-
-  updateCharacter(id: string, updates: Partial<Character>): Character {
-    const existing = this.characters.get(id)
-    if (!existing) {
-      throw new Error(`人设 ${id} 不存在`)
+    const updated = await repositories.characters.update(id, updates)
+    if (!updated) {
+      throw new Error(`角色 ${id} 不存在`)
     }
 
-    const updated: Character = {
-      ...existing,
-      ...updates,
-      id: existing.id, // 确保 ID 不会被覆盖
-      createdAt: existing.createdAt,
-      updatedAt: Date.now()
-    }
-
-    this.characters.set(id, updated)
-    this.saveToStorage()
-    
     return updated
   }
 
-  deleteCharacter(id: string): boolean {
-    if (!this.characters.has(id)) {
-      return false
+  async deleteCharacter(id: string): Promise<boolean> {
+    await this.ensureInitialized()
+
+    // 检查是否是最后一个角色
+    const characters = await repositories.characters.getAll()
+    if (characters.length <= 1) {
+      throw new Error('不能删除最后一个角色')
     }
 
-    this.characters.delete(id)
-    
-    // 如果删除的是当前人设，切换到其他人设
-    if (this.currentCharacterId === id) {
-      const remaining = Array.from(this.characters.values())
-      if (remaining.length > 0) {
-        this.setCurrentCharacter(remaining[0].id)
-      } else {
-        this.currentCharacterId = null
-        localStorage.removeItem(CURRENT_CHARACTER_KEY)
-      }
+    const deleted = await repositories.characters.delete(id)
+
+    // 如果删除的是当前角色，切换到其他角色
+    if (deleted && this.currentCharacterId === id) {
+      const remaining = await repositories.characters.getAll()
+      this.currentCharacterId = remaining.length > 0 ? remaining[0].id : null
     }
 
-    this.saveToStorage()
-    return true
+    return deleted
   }
 
   getCurrentCharacter(): Character | null {
+    return null // 需要异步版本
+  }
+
+  async getCurrentCharacterAsync(): Promise<Character | null> {
+    await this.ensureInitialized()
+
     if (!this.currentCharacterId) {
       return null
     }
-    return this.getCharacter(this.currentCharacterId)
+
+    return await repositories.characters.getById(this.currentCharacterId)
   }
 
-  setCurrentCharacter(id: string): void {
-    if (!this.characters.has(id)) {
-      throw new Error(`人设 ${id} 不存在`)
+  async setCurrentCharacter(id: string): Promise<void> {
+    await this.ensureInitialized()
+
+    const character = await repositories.characters.getById(id)
+    if (!character) {
+      throw new Error(`角色 ${id} 不存在`)
     }
-    
+
     this.currentCharacterId = id
-    localStorage.setItem(CURRENT_CHARACTER_KEY, id)
   }
 
-  // 辅助方法：从系统提示词创建简单人设
-  createFromSystemPrompt(name: string, systemPrompt: string): Character {
-    return this.createCharacter({
-      name,
-      systemPrompt,
-      description: '从系统提示词创建的人设',
-      personality: {
-        traits: [],
-        relationships: {},
-        preferences: {}
-      }
-    })
+  getCurrentCharacterId(): string | null {
+    return this.currentCharacterId
   }
 
-  // 辅助方法：导出人设
-  exportCharacter(id: string): string | null {
-    const character = this.getCharacter(id)
+  // 扩展方法：搜索角色
+  async searchCharacters(query: string): Promise<Character[]> {
+    await this.ensureInitialized()
+    return await repositories.characters.search(query)
+  }
+
+  // 扩展方法：根据特征搜索
+  async searchByTraits(traits: string[]): Promise<Character[]> {
+    await this.ensureInitialized()
+    return await repositories.characters.searchByTraits(traits)
+  }
+
+  // 扩展方法：克隆角色
+  async cloneCharacter(id: string, newName?: string): Promise<Character | null> {
+    await this.ensureInitialized()
+    return await repositories.characters.clone(id, newName)
+  }
+
+  // 扩展方法：导出角色
+  async exportCharacter(id: string): Promise<string | null> {
+    await this.ensureInitialized()
+
+    const character = await repositories.characters.exportCharacter(id)
     if (!character) {
       return null
     }
-    
+
     return JSON.stringify(character, null, 2)
   }
 
-  // 辅助方法：导入人设
-  importCharacter(characterData: string): Character {
+  // 扩展方法：导入角色
+  async importCharacter(characterData: string): Promise<Character> {
+    await this.ensureInitialized()
+
     try {
-      const parsed: Character = JSON.parse(characterData)
-      
+      const data = JSON.parse(characterData)
+
       // 验证必需字段
-      if (!parsed.name || !parsed.systemPrompt) {
-        throw new Error('人设数据不完整')
+      if (!data.name || !data.systemPrompt) {
+        throw new Error('角色数据不完整')
       }
 
-      // 创建新人设（重新生成 ID 和时间戳）
-      return this.createCharacter({
-        name: parsed.name,
-        systemPrompt: parsed.systemPrompt,
-        avatar: parsed.avatar,
-        description: parsed.description,
-        personality: parsed.personality
+      // 检查名称冲突并自动调整
+      let name = data.name
+      let counter = 1
+      while (await repositories.characters.nameExists(name)) {
+        name = `${data.name} (${counter})`
+        counter++
+      }
+
+      return await repositories.characters.create({
+        ...data,
+        name,
       })
-    } catch (error) {
-      throw new Error(`导入人设失败: ${error instanceof Error ? error.message : '未知错误'}`)
+    }
+    catch (error) {
+      throw new Error(`导入角色失败: ${error instanceof Error ? error.message : '未知错误'}`)
     }
   }
 
-  // 辅助方法：重置为默认人设
-  resetToDefault(): Character {
-    // 清除所有人设
-    this.characters.clear()
-    this.currentCharacterId = null
-    
-    // 重新初始化默认人设
-    this.initializeDefaultCharacter()
-    this.saveToStorage()
-    
-    return this.getCurrentCharacter()!
+  // 扩展方法：获取角色使用统计
+  async getUsageStats(): Promise<Array<{
+    character: Character
+    sessionCount: number
+    lastUsed?: number
+  }>> {
+    await this.ensureInitialized()
+    return await repositories.characters.getUsageStats()
+  }
+
+  // 扩展方法：导出所有角色
+  async exportAllCharacters(): Promise<string> {
+    await this.ensureInitialized()
+
+    const characters = await repositories.characters.exportAll()
+    return JSON.stringify({
+      version: '1.0',
+      timestamp: Date.now(),
+      characters,
+    }, null, 2)
+  }
+
+  // 扩展方法：批量导入角色
+  async importMultipleCharacters(charactersData: string): Promise<Character[]> {
+    await this.ensureInitialized()
+
+    try {
+      const data = JSON.parse(charactersData)
+
+      if (!data.characters || !Array.isArray(data.characters)) {
+        throw new Error('导入数据格式无效')
+      }
+
+      const importedCharacters: Character[] = []
+
+      for (const charData of data.characters) {
+        try {
+          const imported = await this.importCharacter(JSON.stringify(charData))
+          importedCharacters.push(imported)
+        }
+        catch (error) {
+          console.warn(`导入角色 "${charData.name}" 失败:`, error)
+        }
+      }
+
+      return importedCharacters
+    }
+    catch (error) {
+      throw new Error(`批量导入失败: ${error instanceof Error ? error.message : '未知错误'}`)
+    }
+  }
+
+  // 扩展方法：重置为默认角色
+  async resetToDefault(): Promise<Character> {
+    await this.ensureInitialized()
+
+    // 检查是否已存在同名角色
+    let name = DEFAULT_CHARACTER.name
+    let counter = 1
+    while (await repositories.characters.nameExists(name)) {
+      name = `${DEFAULT_CHARACTER.name} (${counter})`
+      counter++
+    }
+
+    const character = await repositories.characters.create({
+      ...DEFAULT_CHARACTER,
+      name,
+    })
+
+    this.currentCharacterId = character.id
+    return character
   }
 }
 
 // 创建单例实例
 export const characterService = new CharacterServiceImpl()
 
-// 导出服务类型和默认人设供测试使用
-export { type Character, DEFAULT_CHARACTER }
+export { type Character } from '../types/chat'

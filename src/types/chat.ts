@@ -108,45 +108,45 @@ export interface ChatContext {
 
 // 人设服务接口
 export interface CharacterService {
-  getCharacter(id: string): Character | null
-  getAllCharacters(): Character[]
-  createCharacter(character: Omit<Character, 'id' | 'createdAt' | 'updatedAt'>): Character
-  updateCharacter(id: string, updates: Partial<Character>): Character
-  deleteCharacter(id: string): boolean
-  getCurrentCharacter(): Character | null
-  setCurrentCharacter(id: string): void
+  getCharacter: (id: string) => Promise<Character | null>
+  getAllCharacters: () => Promise<Character[]>
+  createCharacter: (character: Omit<Character, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Character>
+  updateCharacter: (id: string, updates: Partial<Character>) => Promise<Character>
+  deleteCharacter: (id: string) => Promise<boolean>
+  getCurrentCharacter: () => Character | null
+  setCurrentCharacter: (id: string) => Promise<void>
 }
 
 // 记忆服务接口
 export interface MemoryService {
-  addMemory(memory: Omit<Memory, 'id' | 'createdAt' | 'updatedAt'>): Memory
-  searchMemories(query: string, limit?: number): MemorySearchResult[]
-  getRecentMemories(limit?: number): Memory[]
-  updateMemory(id: string, updates: Partial<Memory>): Memory
-  deleteMemory(id: string): boolean
-  getMemoriesByType(type: Memory['type']): Memory[]
-  extractMemoriesFromMessage(message: ExtendedMessage): Omit<Memory, 'id' | 'createdAt' | 'updatedAt'>[]
+  addMemory: (memory: Omit<Memory, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Memory>
+  searchMemories: (query: string, limit?: number) => Promise<MemorySearchResult[]>
+  getRecentMemories: (limit?: number) => Promise<Memory[]>
+  updateMemory: (id: string, updates: Partial<Memory>) => Promise<Memory>
+  deleteMemory: (id: string) => Promise<boolean>
+  getMemoriesByType: (type: Memory['type']) => Promise<Memory[]>
+  extractMemoriesFromMessage: (message: ExtendedMessage) => Promise<Omit<Memory, 'id' | 'createdAt' | 'updatedAt'>[]>
 }
 
 // 消息服务接口
 export interface MessageService {
-  addMessage(sessionId: string, message: Omit<ExtendedMessage, 'id' | 'timestamp'>): ExtendedMessage
-  getMessages(sessionId: string, limit?: number): ExtendedMessage[]
-  updateMessage(messageId: string, updates: Partial<ExtendedMessage>): ExtendedMessage
-  deleteMessage(messageId: string): boolean
-  clearMessages(sessionId: string): boolean
-  searchMessages(query: string, sessionId?: string): ExtendedMessage[]
+  addMessage: (sessionId: string, message: Omit<ExtendedMessage, 'id' | 'timestamp'>) => Promise<ExtendedMessage>
+  getMessages: (sessionId: string, limit?: number) => Promise<ExtendedMessage[]>
+  updateMessage: (messageId: string, updates: Partial<ExtendedMessage>) => Promise<ExtendedMessage>
+  deleteMessage: (messageId: string) => Promise<boolean>
+  clearMessages: (sessionId: string) => Promise<boolean>
+  searchMessages: (query: string, sessionId?: string) => Promise<ExtendedMessage[]>
 }
 
 // 聊天服务接口
 export interface ChatService {
-  sendMessage(
-    content: string, 
-    context: ChatContext, 
+  sendMessage: (
+    content: string,
+    context: ChatContext,
     callbacks: StreamingCallbacks
-  ): Promise<void>
-  generateSystemPrompt(character: Character, memories: Memory[]): string
-  validateConfig(config: ChatConfig): boolean
+  ) => Promise<void>
+  generateSystemPrompt: (character: Character, memories: Memory[]) => string
+  validateConfig: (config: ChatConfig) => boolean
 }
 
 // Vue 组合式函数返回类型
@@ -156,11 +156,11 @@ export interface UseChatReturn {
   isTyping: Ref<boolean>
   currentResponse: Ref<string>
   error: Ref<string | null>
-  
+
   // 配置
   config: Ref<ChatConfig>
   character: Ref<Character | null>
-  
+
   // 方法
   sendMessage: (content: string) => Promise<void>
   clearMessages: () => void

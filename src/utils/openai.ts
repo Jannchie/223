@@ -61,7 +61,7 @@ export class OpenAIChat {
 
       // 创建流式请求
       const stream = await this.client.chat.completions.create({
-        model: 'gpt-4o', // 使用 GPT-4o 模型
+        model: 'gpt-4.1-nano', // 使用 GPT-4o 模型
         messages,
         stream: true,
         temperature: 0.7,

@@ -157,8 +157,7 @@ function createTray() {
         try {
           tray = new Tray(iconPath)
         }
-        catch (iconError) {
-          console.warn('Failed to load icon, creating system tray with empty icon:', iconError.message)
+        catch {
           const emptyIcon = nativeImage.createEmpty()
           tray = new Tray(emptyIcon)
         }
@@ -328,7 +327,6 @@ function createStaticServer(): Promise<number> {
       const address = staticServer?.address()
       if (address && typeof address === 'object') {
         serverPort = address.port
-        console.log(`Static file server running at http://127.0.0.1:${serverPort}`)
         resolve(serverPort)
       }
       else {

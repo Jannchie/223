@@ -141,7 +141,7 @@ class ChatServiceImpl implements ChatService {
       callbacks.onComplete?.(fullContent)
 
       // 从助手回复中提取新记忆
-      this.extractAndSaveMemories(fullContent, 'assistant')
+      await this.extractAndSaveMemories(fullContent, 'assistant')
     }
     catch (error) {
       console.error('聊天服务错误:', error)
@@ -204,7 +204,7 @@ class ChatServiceImpl implements ChatService {
     }
   }
 
-  private extractAndSaveMemories(content: string, role: 'user' | 'assistant'): void {
+  private async extractAndSaveMemories(content: string, role: 'user' | 'assistant'): Promise<void> {
     try {
       // 创建临时消息对象用于提取记忆
       const tempMessage: ExtendedMessage = {
@@ -215,12 +215,12 @@ class ChatServiceImpl implements ChatService {
       }
 
       // 提取记忆
-      const newMemories = memoryService.extractMemoriesFromMessage(tempMessage)
+      const newMemories = await memoryService.extractMemoriesFromMessage(tempMessage)
 
       if (newMemories.length > 0) {
         // 保存新记忆
         for (const memoryData of newMemories) {
-          memoryService.addMemory(memoryData)
+          await memoryService.addMemory(memoryData)
         }
       }
     }
@@ -232,7 +232,7 @@ class ChatServiceImpl implements ChatService {
   // 辅助方法：获取相关记忆
   async getRelevantMemories(query: string, limit: number = 5): Promise<Memory[]> {
     try {
-      const searchResults = memoryService.searchMemories(query, limit)
+      const searchResults = await memoryService.searchMemories(query, limit)
       return searchResults.map(result => result.memory)
     }
     catch (error) {

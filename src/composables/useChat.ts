@@ -3,19 +3,19 @@
  * 提供响应式的聊天状态管理和方法
  */
 
-import { ref, watch, onMounted } from 'vue'
-import { useLocalStorage } from '@vueuse/core'
-import type { 
-  UseChatReturn,
-  ExtendedMessage,
-  ChatConfig,
-  Character,
+import type {
   AIProvider,
+  Character,
+  ChatConfig,
   ChatContext,
-  StreamingCallbacks
+  ExtendedMessage,
+  StreamingCallbacks,
+  UseChatReturn,
 } from '../types/chat'
-import { chatService } from '../services/chat-service'
+import { useLocalStorage } from '@vueuse/core'
+import { onMounted, ref, watch } from 'vue'
 import { characterService } from '../services/character-service'
+import { chatService } from '../services/chat-service'
 import { memoryService } from '../services/memory-service'
 import { messageService } from '../services/message-service'
 
@@ -32,11 +32,11 @@ export function useChat(): UseChatReturn {
   // 配置状态
   const config = ref<ChatConfig>({
     provider: 'openai' as AIProvider,
-    model: 'gpt-4o',
+    model: 'gpt-4.1-nano',
     apiKey: '',
     baseURL: 'https://api.openai.com/v1',
     temperature: 0.7,
-    maxTokens: 2000
+    maxTokens: 2000,
   })
 
   const character = ref<Character | null>(null)
@@ -51,17 +51,11 @@ export function useChat(): UseChatReturn {
     config.value.baseURL = baseURL
   }, { immediate: true })
 
-  // 初始化
-  onMounted(() => {
-    loadCurrentCharacter()
-    loadMessages()
-  })
-
   /**
    * 加载当前人设
    */
-  const loadCurrentCharacter = () => {
-    const current = characterService.getCurrentCharacter()
+  const loadCurrentCharacter = async () => {
+    const current = await characterService.getCurrentCharacterAsync()
     if (current) {
       character.value = current
     }
@@ -70,12 +64,23 @@ export function useChat(): UseChatReturn {
   /**
    * 加载当前会话的消息
    */
-  const loadMessages = () => {
-    const currentSession = messageService.getCurrentSession()
+  const loadMessages = async () => {
+    const currentSession = await messageService.getCurrentSession()
     if (currentSession) {
-      messages.value = currentSession.messages
+      const sessionMessages = await messageService.getMessages(currentSession.id)
+      messages.value = sessionMessages
+      console.log(`已加载会话 ${currentSession.id} 的 ${sessionMessages.length} 条消息`)
+    }
+    else {
+      messages.value = []
     }
   }
+
+  // 初始化
+  onMounted(async () => {
+    await loadCurrentCharacter()
+    await loadMessages()
+  })
 
   /**
    * 发送消息
@@ -98,21 +103,24 @@ export function useChat(): UseChatReturn {
 
     // 清除错误状态
     error.value = null
-    
+
     try {
       // 添加用户消息
-      const currentSession = messageService.getCurrentSession()
+      const currentSession = await messageService.getCurrentSession()
       if (!currentSession) {
-        throw new Error('没有活跃的聊天会话')
+        error.value = '没有活跃的聊天会话'
+        return
       }
 
-      const userMessage = messageService.addMessage(currentSession.id, {
+      console.log(`开始在会话 ${currentSession.id} 中发送消息`)
+
+      const userMessage = await messageService.addMessage(currentSession.id, {
         role: 'user',
         content: content.trim(),
         metadata: {
           provider: config.value.provider,
-          model: config.value.model
-        }
+          model: config.value.model,
+        },
       })
 
       // 更新本地消息列表
@@ -125,12 +133,21 @@ export function useChat(): UseChatReturn {
       // 获取相关记忆
       const relevantMemories = await chatService.getRelevantMemories(content)
 
+      // 获取当前会话的历史消息
+      const sessionMessages = await messageService.getMessages(currentSession.id)
+
+      // 构建带有历史消息的会话对象
+      const sessionWithMessages = {
+        ...currentSession,
+        messages: sessionMessages,
+      }
+
       // 构建聊天上下文
       const chatContext: ChatContext = {
         character: character.value,
         recentMemories: relevantMemories,
-        currentSession,
-        config: config.value
+        currentSession: sessionWithMessages,
+        config: config.value,
       }
 
       // 准备流式回调
@@ -138,17 +155,17 @@ export function useChat(): UseChatReturn {
         onToken: (token: string) => {
           currentResponse.value += token
         },
-        onComplete: (fullContent: string) => {
+        onComplete: async (fullContent: string) => {
           try {
             // 添加助手消息
-            const assistantMessage = messageService.addMessage(currentSession.id, {
+            const assistantMessage = await messageService.addMessage(currentSession.id, {
               role: 'assistant',
               content: fullContent,
               metadata: {
                 provider: config.value.provider,
                 model: config.value.model,
-                tokenCount: chatService.estimateTokens(fullContent)
-              }
+                tokenCount: chatService.estimateTokens(fullContent),
+              },
             })
 
             // 更新本地消息列表
@@ -159,13 +176,20 @@ export function useChat(): UseChatReturn {
             currentResponse.value = ''
 
             // 从用户消息中提取记忆
-            const userMemories = memoryService.extractMemoriesFromMessage(userMessage)
-            userMemories.forEach(memoryData => {
-              memoryService.addMemory(memoryData)
-            })
+            try {
+              const userMemories = await memoryService.extractMemoriesFromMessage(userMessage)
+              for (const memoryData of userMemories) {
+                await memoryService.addMemory(memoryData)
+              }
+            }
+            catch (memoryError) {
+              console.warn('提取记忆失败，但不影响消息保存:', memoryError)
+            }
 
-          } catch (err) {
-            console.error('处理完成回调失败:', err)
+            console.log(`消息对话完成，会话 ${currentSession.id} 现有 ${messages.value.length} 条消息`)
+          }
+          catch (error_) {
+            console.error('处理完成回调失败:', error_)
             error.value = '处理响应失败'
             isTyping.value = false
           }
@@ -178,15 +202,15 @@ export function useChat(): UseChatReturn {
         onMetadata: (metadata: Record<string, any>) => {
           // 可以用于显示token使用情况等元数据
           console.log('聊天元数据:', metadata)
-        }
+        },
       }
 
       // 发送消息
       await chatService.sendMessage(content, chatContext, callbacks)
-
-    } catch (err) {
-      console.error('发送消息失败:', err)
-      error.value = err instanceof Error ? err.message : '发送消息失败'
+    }
+    catch (error_) {
+      console.error('发送消息失败:', error_)
+      error.value = error_ instanceof Error ? error_.message : '发送消息失败'
       isTyping.value = false
     }
   }
@@ -194,10 +218,10 @@ export function useChat(): UseChatReturn {
   /**
    * 清空消息
    */
-  const clearMessages = () => {
-    const currentSession = messageService.getCurrentSession()
+  const clearMessages = async () => {
+    const currentSession = await messageService.getCurrentSession()
     if (currentSession) {
-      messageService.clearMessages(currentSession.id)
+      await messageService.clearMessages(currentSession.id)
       messages.value = []
     }
   }
@@ -205,19 +229,20 @@ export function useChat(): UseChatReturn {
   /**
    * 设置当前人设
    */
-  const setCharacter = (characterId: string) => {
+  const setCharacter = async (characterId: string) => {
     try {
-      characterService.setCurrentCharacter(characterId)
-      loadCurrentCharacter()
-      
+      await characterService.setCurrentCharacter(characterId)
+      await loadCurrentCharacter()
+
       // 如果需要，可以创建新会话
-      const currentSession = messageService.getCurrentSession()
+      const currentSession = await messageService.getCurrentSession()
       if (currentSession && currentSession.characterId !== characterId) {
-        messageService.updateSession(currentSession.id, { characterId })
+        await messageService.updateSession(currentSession.id, { characterId })
       }
-    } catch (err) {
-      console.error('设置人设失败:', err)
-      error.value = err instanceof Error ? err.message : '设置人设失败'
+    }
+    catch (error_) {
+      console.error('设置人设失败:', error_)
+      error.value = error_ instanceof Error ? error_.message : '设置人设失败'
     }
   }
 
@@ -226,7 +251,7 @@ export function useChat(): UseChatReturn {
    */
   const updateConfig = (newConfig: Partial<ChatConfig>) => {
     config.value = { ...config.value, ...newConfig }
-    
+
     // 同步到 localStorage
     if (newConfig.apiKey !== undefined) {
       storedApiKey.value = newConfig.apiKey
@@ -236,11 +261,7 @@ export function useChat(): UseChatReturn {
     }
 
     // 验证新配置
-    if (!chatService.validateConfig(config.value)) {
-      error.value = '配置无效'
-    } else {
-      error.value = null
-    }
+    error.value = chatService.validateConfig(config.value) ? null : '配置无效'
   }
 
   return {
@@ -249,16 +270,16 @@ export function useChat(): UseChatReturn {
     isTyping,
     currentResponse,
     error,
-    
+
     // 配置
     config,
     character,
-    
+
     // 方法
     sendMessage,
     clearMessages,
     setCharacter,
-    updateConfig
+    updateConfig,
   }
 }
 
@@ -275,14 +296,14 @@ export function useChatCompatible() {
     character,
     sendMessage,
     clearMessages,
-    updateConfig
+    updateConfig,
   } = useChat()
 
   // 兼容旧版本的接口
   const initializeOpenAI = (apiKey: string, baseURL?: string) => {
     updateConfig({
       apiKey,
-      baseURL: baseURL || 'https://api.openai.com/v1'
+      baseURL: baseURL || 'https://api.openai.com/v1',
     })
   }
 
@@ -294,7 +315,7 @@ export function useChatCompatible() {
           console.warn('使用了旧版本的回调接口，建议升级到新版本')
         }
         await sendMessage(content)
-      }
+      },
     }
   }
 
@@ -309,7 +330,7 @@ export function useChatCompatible() {
     clearMessages,
     updateConfig,
     initializeOpenAI,
-    getChatInstance
+    getChatInstance,
   }
 }
 
@@ -320,38 +341,38 @@ export function useCharacters() {
   const characters = ref<Character[]>([])
   const currentCharacter = ref<Character | null>(null)
 
-  const loadCharacters = () => {
-    characters.value = characterService.getAllCharacters()
-    currentCharacter.value = characterService.getCurrentCharacter()
+  const loadCharacters = async () => {
+    characters.value = await characterService.getAllCharacters()
+    currentCharacter.value = await characterService.getCurrentCharacterAsync()
   }
 
-  const createCharacter = (characterData: Omit<Character, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newCharacter = characterService.createCharacter(characterData)
-    loadCharacters()
+  const createCharacter = async (characterData: Omit<Character, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const newCharacter = await characterService.createCharacter(characterData)
+    await loadCharacters()
     return newCharacter
   }
 
-  const updateCharacter = (id: string, updates: Partial<Character>) => {
-    const updated = characterService.updateCharacter(id, updates)
-    loadCharacters()
+  const updateCharacter = async (id: string, updates: Partial<Character>) => {
+    const updated = await characterService.updateCharacter(id, updates)
+    await loadCharacters()
     return updated
   }
 
-  const deleteCharacter = (id: string) => {
-    const success = characterService.deleteCharacter(id)
+  const deleteCharacter = async (id: string) => {
+    const success = await characterService.deleteCharacter(id)
     if (success) {
-      loadCharacters()
+      await loadCharacters()
     }
     return success
   }
 
-  const setCurrentCharacter = (id: string) => {
-    characterService.setCurrentCharacter(id)
-    loadCharacters()
+  const setCurrentCharacter = async (id: string) => {
+    await characterService.setCurrentCharacter(id)
+    await loadCharacters()
   }
 
-  onMounted(() => {
-    loadCharacters()
+  onMounted(async () => {
+    await loadCharacters()
   })
 
   return {
@@ -361,8 +382,26 @@ export function useCharacters() {
     updateCharacter,
     deleteCharacter,
     setCurrentCharacter,
-    loadCharacters
+    loadCharacters,
   }
+}
+
+// 记忆管理相关的异步函数
+async function searchMemoriesService(query: string, limit?: number) {
+  const results = await memoryService.searchMemories(query, limit)
+  return results
+}
+
+async function getRecentMemoriesService(limit?: number) {
+  return await memoryService.getRecentMemories(limit)
+}
+
+async function addMemoryService(memoryData: any) {
+  return await memoryService.addMemory(memoryData)
+}
+
+async function deleteMemoryService(id: string) {
+  return await memoryService.deleteMemory(id)
 }
 
 /**
@@ -372,30 +411,22 @@ export function useMemories() {
   const memories = ref<any[]>([])
   const memoryStats = ref<any>({})
 
-  const searchMemories = async (query: string, limit?: number) => {
-    const results = memoryService.searchMemories(query, limit)
-    return results
-  }
+  const searchMemories = searchMemoriesService
+  const getRecentMemories = getRecentMemoriesService
+  const addMemory = addMemoryService
+  const deleteMemory = deleteMemoryService
 
-  const getRecentMemories = (limit?: number) => {
-    return memoryService.getRecentMemories(limit)
-  }
-
-  const addMemory = (memoryData: any) => {
-    return memoryService.addMemory(memoryData)
-  }
-
-  const deleteMemory = (id: string) => {
-    return memoryService.deleteMemory(id)
-  }
-
-  const getStats = () => {
-    memoryStats.value = memoryService.getMemoryStats()
+  const getStats = async () => {
+    memoryStats.value = await memoryService.getMemoryStats()
     return memoryStats.value
   }
 
-  const clearAllMemories = () => {
-    memoryService.clearAllMemories()
+  const clearAllMemories = async () => {
+    // 注意：memoryService 中没有 clearAllMemories 方法，这里需要修复
+    const allMemories = await memoryService.getRecentMemories(1000) // 获取大量记忆
+    for (const memory of allMemories) {
+      await memoryService.deleteMemory(memory.id)
+    }
     memories.value = []
   }
 
@@ -407,6 +438,6 @@ export function useMemories() {
     addMemory,
     deleteMemory,
     getStats,
-    clearAllMemories
+    clearAllMemories,
   }
 }

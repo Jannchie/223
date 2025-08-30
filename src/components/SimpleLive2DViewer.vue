@@ -518,7 +518,8 @@ function updateGazeParameters() {
               const vertices = internalModel.coreModel.getDrawableVertexPositions(i)
               if (vertices && vertices.length >= 2) {
                 // 计算drawable的中心点（取顶点的平均值）
-                let centerX = 0; let centerY = 0
+                let centerX = 0
+                let centerY = 0
                 const vertexCount = vertices.length / 2
                 for (let j = 0; j < vertices.length; j += 2) {
                   centerX += vertices[j]
@@ -980,9 +981,7 @@ onUnmounted(() => {
     clearTimeout(speakingTimer.value)
   }
   // 清理窗口大小监听器
-  window.removeEventListener('resize', () => {
-    windowHeight.value = window.innerHeight
-  })
+  window.removeEventListener('resize', handleResize)
 })
 </script>
 

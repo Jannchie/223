@@ -1,402 +1,321 @@
 /**
  * 记忆库服务
  * 负责管理长期记忆、上下文检索和记忆相关性分析
+ * 现在使用 IndexedDB 作为存储后端
  */
 
-import type { Memory, MemoryService, MemorySearchResult, ExtendedMessage } from '../types/chat'
+import type { ExtendedMessage, Memory, MemorySearchResult, MemoryService } from '../types/chat'
+import { repositories } from '../composables/useDatabase'
+import { initializeDatabase } from '../db'
 
-const STORAGE_KEY = 'chat-memories'
-const MAX_MEMORIES = 1000 // 最大记忆条数
+const _MAX_MEMORIES = 1000 // 最大记忆条数
 const CLEANUP_THRESHOLD = 1200 // 清理阈值
 
 class MemoryServiceImpl implements MemoryService {
-  private memories: Map<string, Memory> = new Map()
+  private initialized = false
 
   constructor() {
-    this.loadFromStorage()
+    this.initialize()
   }
 
-  private generateId(): string {
-    return Date.now().toString() + Math.random().toString(36).substring(2)
-  }
-
-  private loadFromStorage(): void {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) {
-        const memoriesArray: Memory[] = JSON.parse(stored)
-        this.memories.clear()
-        memoriesArray.forEach(memory => {
-          this.memories.set(memory.id, memory)
-        })
-      }
-    } catch (error) {
-      console.error('加载记忆数据失败:', error)
-    }
-  }
-
-  private saveToStorage(): void {
-    try {
-      const memoriesArray = Array.from(this.memories.values())
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(memoriesArray))
-    } catch (error) {
-      console.error('保存记忆数据失败:', error)
-    }
-  }
-
-  private cleanupOldMemories(): void {
-    if (this.memories.size <= MAX_MEMORIES) {
+  private async initialize(): Promise<void> {
+    if (this.initialized) {
       return
     }
 
-    // 获取所有记忆并按重要性和最后访问时间排序
-    const memoriesArray = Array.from(this.memories.values())
-    memoriesArray.sort((a, b) => {
-      // 首先按重要性排序（高到低）
-      if (a.importance !== b.importance) {
-        return b.importance - a.importance
-      }
-      // 然后按最后访问时间排序（新到旧）
-      return b.lastAccessed - a.lastAccessed
-    })
-
-    // 保留前 MAX_MEMORIES 个记忆
-    const toKeep = memoriesArray.slice(0, MAX_MEMORIES)
-    this.memories.clear()
-    toKeep.forEach(memory => {
-      this.memories.set(memory.id, memory)
-    })
-
-    console.log(`记忆清理完成，保留了 ${toKeep.length} 条记忆`)
+    try {
+      // 初始化数据库
+      await initializeDatabase()
+      this.initialized = true
+    }
+    catch (error) {
+      console.error('记忆服务初始化失败:', error)
+      throw error
+    }
   }
 
-  addMemory(memory: Omit<Memory, 'id' | 'createdAt' | 'updatedAt'>): Memory {
-    const id = this.generateId()
-    const now = Date.now()
-    
-    const newMemory: Memory = {
-      ...memory,
-      id,
-      createdAt: now,
-      updatedAt: now,
-      lastAccessed: now
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initialized) {
+      await this.initialize()
+    }
+  }
+
+  async addMemory(memory: Omit<Memory, 'id' | 'createdAt' | 'updatedAt'>): Promise<Memory> {
+    await this.ensureInitialized()
+
+    const newMemory = await repositories.memories.create(memory)
+
+    // 定期清理旧记忆
+    const count = await repositories.memories.batchOperation(async () => {
+      const memories = await repositories.memories.getAll()
+      return memories.length
+    })
+
+    if (count > CLEANUP_THRESHOLD) {
+      await this.cleanupOldMemories()
     }
 
-    this.memories.set(id, newMemory)
-    
-    // 检查是否需要清理
-    if (this.memories.size > CLEANUP_THRESHOLD) {
-      this.cleanupOldMemories()
-    }
-    
-    this.saveToStorage()
     return newMemory
   }
 
-  searchMemories(query: string, limit: number = 10): MemorySearchResult[] {
-    if (!query.trim()) {
-      return []
-    }
-
-    const queryLower = query.toLowerCase()
-    const queryKeywords = this.extractKeywords(query)
-    const results: MemorySearchResult[] = []
-
-    for (const memory of this.memories.values()) {
-      const relevanceScore = this.calculateRelevance(memory, queryLower, queryKeywords)
-      
-      if (relevanceScore > 0) {
-        results.push({
-          memory,
-          relevanceScore
-        })
-        
-        // 更新最后访问时间
-        memory.lastAccessed = Date.now()
-      }
-    }
-
-    // 按相关性评分排序并限制结果数量
-    results.sort((a, b) => b.relevanceScore - a.relevanceScore)
-    const limitedResults = results.slice(0, limit)
-    
-    if (limitedResults.length > 0) {
-      this.saveToStorage() // 保存更新的访问时间
-    }
-    
-    return limitedResults
+  async searchMemories(query: string, limit: number = 10): Promise<MemorySearchResult[]> {
+    await this.ensureInitialized()
+    return await repositories.memories.search(query, limit)
   }
 
-  getRecentMemories(limit: number = 20): Memory[] {
-    const memoriesArray = Array.from(this.memories.values())
-    return memoriesArray
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .slice(0, limit)
-      .map(memory => {
-        // 更新最后访问时间
-        memory.lastAccessed = Date.now()
-        return memory
-      })
+  async getRecentMemories(limit: number = 20): Promise<Memory[]> {
+    await this.ensureInitialized()
+    return await repositories.memories.getRecent(limit)
   }
 
-  updateMemory(id: string, updates: Partial<Memory>): Memory {
-    const existing = this.memories.get(id)
-    if (!existing) {
+  async updateMemory(id: string, updates: Partial<Memory>): Promise<Memory> {
+    await this.ensureInitialized()
+
+    const updated = await repositories.memories.update(id, updates)
+    if (!updated) {
       throw new Error(`记忆 ${id} 不存在`)
     }
 
-    const updated: Memory = {
-      ...existing,
-      ...updates,
-      id: existing.id, // 确保 ID 不会被覆盖
-      createdAt: existing.createdAt,
-      updatedAt: Date.now()
-    }
-
-    this.memories.set(id, updated)
-    this.saveToStorage()
-    
     return updated
   }
 
-  deleteMemory(id: string): boolean {
-    if (!this.memories.has(id)) {
-      return false
-    }
-
-    this.memories.delete(id)
-    this.saveToStorage()
-    return true
+  async deleteMemory(id: string): Promise<boolean> {
+    await this.ensureInitialized()
+    return await repositories.memories.delete(id)
   }
 
-  getMemoriesByType(type: Memory['type']): Memory[] {
-    return Array.from(this.memories.values())
-      .filter(memory => memory.type === type)
-      .sort((a, b) => b.createdAt - a.createdAt)
+  async getMemoriesByType(type: Memory['type']): Promise<Memory[]> {
+    await this.ensureInitialized()
+    return await repositories.memories.getByType(type)
   }
 
-  extractMemoriesFromMessage(message: ExtendedMessage): Omit<Memory, 'id' | 'createdAt' | 'updatedAt'>[] {
+  async extractMemoriesFromMessage(message: ExtendedMessage): Promise<Omit<Memory, 'id' | 'createdAt' | 'updatedAt'>[]> {
+    await this.ensureInitialized()
+
     const memories: Omit<Memory, 'id' | 'createdAt' | 'updatedAt'>[] = []
-    
-    // 提取事实性信息
-    const facts = this.extractFacts(message.content)
-    facts.forEach(fact => {
-      memories.push({
-        ...this.createBaseMemory('fact', fact, message),
-        importance: 6 // 中等重要性
-      })
-    })
+    const content = message.content.toLowerCase()
 
-    // 提取偏好信息
-    const preferences = this.extractPreferences(message.content)
-    preferences.forEach(preference => {
-      memories.push({
-        ...this.createBaseMemory('preference', preference, message),
-        importance: 7 // 较高重要性
-      })
-    })
+    // 基础关键词提取
+    const keywords = this.extractKeywords(content)
 
-    // 提取重要事件
-    if (this.isImportantEvent(message.content)) {
+    // 检测事实性信息
+    if (this.containsFactualInfo(content)) {
       memories.push({
-        ...this.createBaseMemory('event', `用户分享了重要事件：${message.content}`, message),
-        importance: 8 // 高重要性
+        type: 'fact',
+        content: message.content,
+        keywords,
+        importance: this.calculateImportance(message, 'fact'),
+        lastAccessed: Date.now(),
+        relatedMessageIds: [message.id],
       })
     }
 
-    // 保存对话片段（较低优先级）
-    if (message.role === 'user' && message.content.length > 20) {
+    // 检测用户偏好
+    if (this.containsPreference(content)) {
       memories.push({
-        ...this.createBaseMemory('conversation', message.content, message),
-        importance: 4 // 较低重要性
+        type: 'preference',
+        content: message.content,
+        keywords,
+        importance: this.calculateImportance(message, 'preference'),
+        lastAccessed: Date.now(),
+        relatedMessageIds: [message.id],
+      })
+    }
+
+    // 重要对话片段
+    if (message.role === 'user' && content.length > 20) {
+      memories.push({
+        type: 'conversation',
+        content: message.content,
+        keywords,
+        importance: this.calculateImportance(message, 'conversation'),
+        lastAccessed: Date.now(),
+        relatedMessageIds: [message.id],
       })
     }
 
     return memories
   }
 
-  private createBaseMemory(type: Memory['type'], content: string, message: ExtendedMessage): Omit<Memory, 'id' | 'createdAt' | 'updatedAt'> {
-    return {
-      type,
-      content,
-      keywords: this.extractKeywords(content),
-      importance: 5, // 默认重要性
-      lastAccessed: Date.now(),
-      relatedMessageIds: [message.id]
-    }
+  // 扩展方法：智能记忆推荐
+  async getRecommendations(sourceMemoryId: string, limit: number = 5): Promise<Memory[]> {
+    await this.ensureInitialized()
+    return await repositories.memories.getRecommendations(sourceMemoryId, limit)
   }
 
-  private extractKeywords(text: string): string[] {
-    const keywords = new Set<string>()
-    const words = text.toLowerCase().match(/[\u4e00-\u9fa5\w]+/g) || []
-    
-    // 过滤常见停用词和短词
-    const stopWords = new Set(['的', '是', '在', '了', '和', '有', '我', '你', '他', '她', '它', 'the', 'is', 'are', 'was', 'were', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'])
-    
-    words.forEach(word => {
-      if (word.length > 1 && !stopWords.has(word)) {
-        keywords.add(word)
-      }
-    })
-
-    return Array.from(keywords)
+  // 扩展方法：根据重要性获取记忆
+  async getImportantMemories(minImportance: number = 7, limit?: number): Promise<Memory[]> {
+    await this.ensureInitialized()
+    return await repositories.memories.getByImportance(minImportance, limit)
   }
 
-  private calculateRelevance(memory: Memory, queryLower: string, queryKeywords: string[]): number {
-    let score = 0
-
-    // 内容直接匹配
-    if (memory.content.toLowerCase().includes(queryLower)) {
-      score += 10
-    }
-
-    // 关键词匹配
-    const matchingKeywords = memory.keywords.filter(keyword => 
-      queryKeywords.some(qk => keyword.includes(qk) || qk.includes(keyword))
-    )
-    score += matchingKeywords.length * 2
-
-    // 重要性加权
-    score += memory.importance * 0.5
-
-    // 时间衰减（越新的记忆分数越高）
-    const daysSinceCreated = (Date.now() - memory.createdAt) / (1000 * 60 * 60 * 24)
-    const timeDecay = Math.max(0, 1 - daysSinceCreated / 30) // 30天后开始显著衰减
-    score *= (0.5 + timeDecay * 0.5)
-
-    return score
+  // 扩展方法：根据关键词获取记忆
+  async getMemoriesByKeywords(keywords: string[]): Promise<Memory[]> {
+    await this.ensureInitialized()
+    return await repositories.memories.getByKeywords(keywords)
   }
 
-  private extractFacts(content: string): string[] {
-    const facts: string[] = []
-    
-    // 简单的事实提取模式
-    const factPatterns = [
-      /我(?:喜欢|爱|不喜欢|讨厌)(.+)/g,
-      /我(?:是|叫|名字是)(.+)/g,
-      /我(?:在|住在|来自)(.+)/g,
-      /我(?:学|学习|专业是)(.+)/g,
-      /我(?:工作|做|职业是)(.+)/g
-    ]
-
-    factPatterns.forEach(pattern => {
-      let match
-      while ((match = pattern.exec(content)) !== null) {
-        facts.push(match[0])
-      }
-    })
-
-    return facts
-  }
-
-  private extractPreferences(content: string): string[] {
-    const preferences: string[] = []
-    
-    // 偏好提取模式
-    const preferencePatterns = [
-      /(?:更喜欢|偏爱|偏好)(.+)/g,
-      /(?:不喜欢|讨厌|不要)(.+)/g,
-      /(?:希望|想要|期望)(.+)/g
-    ]
-
-    preferencePatterns.forEach(pattern => {
-      let match
-      while ((match = pattern.exec(content)) !== null) {
-        preferences.push(match[0])
-      }
-    })
-
-    return preferences
-  }
-
-  private isImportantEvent(content: string): boolean {
-    const eventKeywords = [
-      '生日', '结婚', '毕业', '工作', '旅行', '搬家', '考试', 
-      '面试', '升职', '生病', '康复', '成功', '失败', '获奖',
-      '发布', '完成', '开始', '结束'
-    ]
-    
-    return eventKeywords.some(keyword => content.includes(keyword))
-  }
-
-  // 辅助方法：获取记忆统计信息
-  getMemoryStats(): {
+  // 扩展方法：获取记忆统计
+  async getMemoryStats(): Promise<{
     total: number
     byType: Record<Memory['type'], number>
-    avgImportance: number
-    oldestMemory: number | null
-    newestMemory: number | null
-  } {
-    const memoriesArray = Array.from(this.memories.values())
-    
-    const byType = {
-      fact: 0,
-      preference: 0,
-      conversation: 0,
-      event: 0
+    byImportance: Record<number, number>
+    averageImportance: number
+  }> {
+    await this.ensureInitialized()
+    return await repositories.memories.getStats()
+  }
+
+  // 扩展方法：批量添加记忆
+  async bulkAddMemories(memories: Omit<Memory, 'id' | 'createdAt' | 'updatedAt' | 'lastAccessed'>[]): Promise<Memory[]> {
+    await this.ensureInitialized()
+
+    const ids = await repositories.memories.bulkCreate(memories)
+    const createdMemories: Memory[] = []
+
+    for (const id of ids) {
+      const memory = await repositories.memories.getById(id)
+      if (memory) {
+        createdMemories.push(memory)
+      }
     }
 
-    let totalImportance = 0
-    let oldest: number | null = null
-    let newest: number | null = null
-
-    memoriesArray.forEach(memory => {
-      byType[memory.type]++
-      totalImportance += memory.importance
-      
-      if (oldest === null || memory.createdAt < oldest) {
-        oldest = memory.createdAt
-      }
-      if (newest === null || memory.createdAt > newest) {
-        newest = memory.createdAt
-      }
-    })
-
-    return {
-      total: memoriesArray.length,
-      byType,
-      avgImportance: memoriesArray.length > 0 ? totalImportance / memoriesArray.length : 0,
-      oldestMemory: oldest,
-      newestMemory: newest
-    }
+    return createdMemories
   }
 
-  // 辅助方法：清空所有记忆
-  clearAllMemories(): void {
-    this.memories.clear()
-    this.saveToStorage()
+  // 扩展方法：导出记忆
+  async exportMemories(): Promise<string> {
+    await this.ensureInitialized()
+
+    const memories = await repositories.memories.exportAll()
+    return JSON.stringify({
+      version: '1.0',
+      timestamp: Date.now(),
+      memories,
+    }, null, 2)
   }
 
-  // 辅助方法：导出记忆数据
-  exportMemories(): string {
-    const memoriesArray = Array.from(this.memories.values())
-    return JSON.stringify(memoriesArray, null, 2)
-  }
+  // 扩展方法：导入记忆
+  async importMemories(memoriesData: string): Promise<Memory[]> {
+    await this.ensureInitialized()
 
-  // 辅助方法：导入记忆数据
-  importMemories(memoriesData: string, merge: boolean = false): void {
     try {
-      const importedMemories: Memory[] = JSON.parse(memoriesData)
-      
-      if (!merge) {
-        this.memories.clear()
+      const data = JSON.parse(memoriesData)
+
+      if (!data.memories || !Array.isArray(data.memories)) {
+        throw new Error('导入数据格式无效')
       }
-      
-      importedMemories.forEach(memory => {
-        // 验证记忆数据结构
-        if (memory.id && memory.content && memory.type) {
-          this.memories.set(memory.id, memory)
-        }
-      })
-      
-      this.saveToStorage()
-    } catch (error) {
+
+      return await this.bulkAddMemories(data.memories)
+    }
+    catch (error) {
       throw new Error(`导入记忆失败: ${error instanceof Error ? error.message : '未知错误'}`)
     }
+  }
+
+  // 扩展方法：清理过期记忆
+  private async cleanupOldMemories(): Promise<void> {
+    const deletedCount = await repositories.memories.cleanupOldMemories(30, 5)
+    if (deletedCount > 0) {
+      console.log(`清理了 ${deletedCount} 条过期记忆`)
+    }
+  }
+
+  // 辅助方法：提取关键词
+  private extractKeywords(content: string): string[] {
+    const keywords: string[] = []
+
+    // 简单的关键词提取逻辑
+    const words = content.split(/\s+/)
+      .map(word => word.replaceAll(/[^\w\u4E00-\u9FFF]/g, ''))
+      .filter(word => word.length > 1)
+
+    // 提取中文和英文关键词
+    const uniqueWords = [...new Set(words)]
+    keywords.push(...uniqueWords.slice(0, 10)) // 最多保留10个关键词
+
+    // 检测特殊模式
+    if (content.includes('喜欢') || content.includes('爱好')) {
+      keywords.push('偏好')
+    }
+    if (content.includes('不喜欢') || content.includes('讨厌')) {
+      keywords.push('负面偏好')
+    }
+    if (content.includes('技能') || content.includes('能力')) {
+      keywords.push('能力')
+    }
+
+    return keywords
+  }
+
+  // 辅助方法：检测事实性信息
+  private containsFactualInfo(content: string): boolean {
+    const factPatterns = [
+      /我是|我叫|我的名字/,
+      /我住在|我来自|我在.*工作/,
+      /我学习|我专业是|我的工作是/,
+      /我会|我能够|我擅长/,
+      /事实上|实际上|据我所知/,
+    ]
+
+    return factPatterns.some(pattern => pattern.test(content))
+  }
+
+  // 辅助方法：检测用户偏好
+  private containsPreference(content: string): boolean {
+    const preferencePatterns = [
+      /我喜欢|我爱|我偏好/,
+      /我不喜欢|我讨厌|我不爱/,
+      /我希望|我想要|我期望/,
+      /我认为.*好|我觉得.*棒/,
+      /最喜欢|最爱|最讨厌/,
+    ]
+
+    return preferencePatterns.some(pattern => pattern.test(content))
+  }
+
+  // 辅助方法：计算记忆重要性
+  private calculateImportance(message: ExtendedMessage, type: Memory['type']): number {
+    let importance = 5 // 基础重要性
+
+    // 根据类型调整
+    switch (type) {
+      case 'fact': {
+        importance += 2
+        break
+      }
+      case 'preference': {
+        importance += 1
+        break
+      }
+      case 'conversation': {
+        importance += 0
+        break
+      }
+      case 'event': {
+        importance += 1
+        break
+      }
+    }
+
+    // 根据消息长度调整
+    if (message.content.length > 100) {
+      importance += 1
+    }
+    if (message.content.length > 300) {
+      importance += 1
+    }
+
+    // 根据角色调整
+    if (message.role === 'user') {
+      importance += 1
+    }
+
+    return Math.min(10, Math.max(1, importance))
   }
 }
 
 // 创建单例实例
 export const memoryService = new MemoryServiceImpl()
 
-export { type Memory, type MemorySearchResult }
+export { type Memory, type MemorySearchResult } from '../types/chat'
