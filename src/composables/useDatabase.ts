@@ -31,6 +31,23 @@ const stats = reactive({
   memories: 0,
 })
 
+// 搜索记忆的辅助函数
+function searchMemoriesHelper(query: string, limit?: number) {
+  return memoryRepo.search(query, limit)
+}
+
+// 清空所有数据的辅助函数
+async function clearAllDataHelper(): Promise<void> {
+  await db.transaction('rw', db.sessions, db.messages, db.characters, db.memories, async () => {
+    await Promise.all([
+      db.sessions.clear(),
+      db.messages.clear(),
+      db.characters.clear(),
+      db.memories.clear(),
+    ])
+  })
+}
+
 /**
  * 主要的数据库组合式函数
  */
@@ -202,7 +219,6 @@ export function useMessages(sessionId: Ref<string | null>) {
     const newMessage = await messageRepo.create({
       ...message,
       sessionId: sessionId.value,
-      timestamp: Date.now(),
     })
 
     messages.value.push(newMessage)
@@ -347,7 +363,7 @@ export function useMemories() {
   }
 
   // 搜索记忆
-  const searchMemories = (query: string, limit?: number) => memoryRepo.search(query, limit)
+  const searchMemories = searchMemoriesHelper
 
   // 删除记忆
   const deleteMemory = async (id: string): Promise<void> => {
@@ -366,6 +382,13 @@ export function useMemories() {
 }
 
 /**
+ * 清空所有数据的函数（外部作用域）
+ */
+async function clearAllData(): Promise<void> {
+  await clearAllDataHelper()
+}
+
+/**
  * 数据迁移和管理组合式函数
  */
 export function useDatabaseManagement() {
@@ -377,7 +400,11 @@ export function useDatabaseManagement() {
     try {
       exportingData.value = true
 
-      const [sessions, characters, memories] = await Promise.all([
+      const [
+        sessions,
+        characters,
+        memories,
+      ] = await Promise.all([
         sessionRepo.getAll(),
         characterRepo.exportAll(),
         memoryRepo.exportAll(),
@@ -398,18 +425,6 @@ export function useDatabaseManagement() {
     finally {
       exportingData.value = false
     }
-  }
-
-  // 清空所有数据
-  const clearAllData = async (): Promise<void> => {
-    await db.transaction('rw', db.sessions, db.messages, db.characters, db.memories, async () => {
-      await Promise.all([
-        db.sessions.clear(),
-        db.messages.clear(),
-        db.characters.clear(),
-        db.memories.clear(),
-      ])
-    })
   }
 
   return {

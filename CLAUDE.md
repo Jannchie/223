@@ -32,7 +32,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 核心文件结构
 
-```
+```txt
 electron/
 ├── main.ts           # Electron 主进程 - 窗口管理、静态服务器、系统托盘
 ├── preload.ts        # 进程间通信 - 暴露 electronAPI

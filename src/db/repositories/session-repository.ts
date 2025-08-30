@@ -41,12 +41,14 @@ export class SessionRepository {
    * 根据角色ID获取会话
    */
   async getByCharacterId(characterId: string): Promise<ChatSession[]> {
-    return await db.sessions
+    const sessions = await db.sessions
       .where('characterId')
       .equals(characterId)
-      .orderBy('updatedAt')
-      .reverse()
       .toArray()
+
+    // 手动排序，按更新时间降序
+    sessions.sort((a, b) => b.updatedAt - a.updatedAt)
+    return sessions
   }
 
   /**
@@ -92,12 +94,14 @@ export class SessionRepository {
    * 根据时间范围获取会话
    */
   async getByDateRange(startTime: number, endTime: number): Promise<ChatSession[]> {
-    return await db.sessions
+    const sessions = await db.sessions
       .where('updatedAt')
       .between(startTime, endTime)
-      .orderBy('updatedAt')
-      .reverse()
       .toArray()
+
+    // 手动排序，按更新时间降序
+    sessions.sort((a, b) => b.updatedAt - a.updatedAt)
+    return sessions
   }
 
   /**

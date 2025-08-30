@@ -103,13 +103,15 @@ export class MessageRepository {
       collection = db.messages.where('sessionId').equals(sessionId)
     }
 
-    return await collection
+    const messages = await collection
       .filter(message =>
         message.content.toLowerCase().includes(query.toLowerCase()),
       )
-      .orderBy('timestamp')
-      .reverse()
       .toArray()
+
+    // 手动排序，按时间戳降序
+    messages.sort((a, b) => b.timestamp - a.timestamp)
+    return messages
   }
 
   /**
@@ -149,16 +151,17 @@ export class MessageRepository {
     const messages = await db.messages
       .where('sessionId')
       .equals(sessionId)
-      .orderBy('timestamp')
-      .reverse()
       .toArray()
+
+    // 手动排序，按时间戳降序
+    messages.sort((a, b) => b.timestamp - a.timestamp)
 
     if (messages.length <= keepCount) {
       return 0
     }
 
     const messagesToDelete = messages.slice(keepCount)
-    const idsToDelete = messagesToDelete.map(m => m.id)
+    const idsToDelete = messagesToDelete.map((m: ExtendedMessage) => m.id)
 
     return await this.deleteMany(idsToDelete)
   }

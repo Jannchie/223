@@ -837,14 +837,15 @@ function handleGlobalMouseMove(event: MouseEvent) {
   setMouseEventTransparency(!shouldShowInput)
 }
 
+// 监听窗口大小变化
+function handleResize() {
+  windowHeight.value = window.innerHeight
+}
+
 onMounted(async () => {
   // 初始化聊天服务
   initializeChatService()
 
-  // 监听窗口大小变化
-  const handleResize = () => {
-    windowHeight.value = window.innerHeight
-  }
   window.addEventListener('resize', handleResize)
 
   // 只在设置面板显示时监听全局鼠标事件

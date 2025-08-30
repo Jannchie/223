@@ -97,6 +97,7 @@ export class CharacterRepository {
   async getRecentlyCreated(limit: number = 10): Promise<Character[]> {
     return await db.characters
       .orderBy('createdAt')
+
       .reverse()
       .limit(limit)
       .toArray()

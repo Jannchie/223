@@ -8,7 +8,7 @@ import type { ExtendedMessage, Memory, MemorySearchResult, MemoryService } from 
 import { repositories } from '../composables/useDatabase'
 import { initializeDatabase } from '../db'
 
-const _MAX_MEMORIES = 1000 // 最大记忆条数
+// const _MAX_MEMORIES = 1000 // 最大记忆条数（保留以备后用）
 const CLEANUP_THRESHOLD = 1200 // 清理阈值
 
 class MemoryServiceImpl implements MemoryService {

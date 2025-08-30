@@ -48,12 +48,14 @@ export class MemoryRepository {
    * 根据类型获取记忆
    */
   async getByType(type: Memory['type']): Promise<Memory[]> {
-    return await db.memories
+    const memories = await db.memories
       .where('type')
       .equals(type)
-      .orderBy('importance')
-      .reverse()
       .toArray()
+
+    // 手动排序，按重要性降序
+    memories.sort((a, b) => b.importance - a.importance)
+    return memories
   }
 
   /**

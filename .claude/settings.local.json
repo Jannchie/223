@@ -11,7 +11,8 @@
       "Bash(node:*)",
       "Bash(vue-tsc --noEmit)",
       "Bash(npm run:*)",
-      "Bash(where convert)"
+      "Bash(where convert)",
+      "Bash(npx vue-tsc:*)"
     ],
     "deny": [],
     "ask": []
