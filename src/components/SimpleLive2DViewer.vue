@@ -3,7 +3,7 @@
 import { Live2DModel } from '@jannchie/pixi-live2d-display'
 import { useLocalStorage } from '@vueuse/core'
 import { Application, Ticker } from 'pixi.js'
-import { onMounted, onUnmounted, ref, watch, computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useChatCompatible } from '../composables/useChat'
 
 // 输入框相关状态
@@ -31,17 +31,17 @@ const {
   error: chatError,
   config: chatConfig,
   sendMessage: chatSendMessage,
-  updateConfig
+  updateConfig,
 } = useChatCompatible()
 
 // 兼容旧版本的状态映射
 const apiKey = computed({
   get: () => chatConfig.value.apiKey,
-  set: (value: string) => updateConfig({ apiKey: value })
+  set: (value: string) => updateConfig({ apiKey: value }),
 })
 const baseURL = computed({
   get: () => chatConfig.value.baseURL || 'https://api.openai.com/v1',
-  set: (value: string) => updateConfig({ baseURL: value })
+  set: (value: string) => updateConfig({ baseURL: value }),
 })
 const showSettings = ref(false)
 
@@ -255,10 +255,10 @@ function initializeChatService() {
     try {
       updateConfig({
         apiKey: apiKey.value,
-        baseURL: baseURL.value
+        baseURL: baseURL.value,
       })
       // 显示欢迎消息
-      showTemporaryBubble('嗨~我是06娘！快来和我聊天吧~ ✨', 4000)
+      showTemporaryBubble('嗨~我是06娘！快来和我聊天吧~', 4000)
     }
     catch {
       // 忽略错误
@@ -266,7 +266,7 @@ function initializeChatService() {
   }
   else {
     // 如果没有配置API Key，显示提示消息
-    showTemporaryBubble('点击下方的设置按钮⚙️配置API Key就可以和我聊天啦~', 6000)
+    showTemporaryBubble('点击下方的设置按钮配置API Key就可以和我聊天啦~', 6000)
   }
 }
 
@@ -299,7 +299,7 @@ async function sendMessage() {
 
   try {
     await chatSendMessage(content)
-    
+
     // AI 回复完成后自动聚焦到输入框
     setTimeout(() => {
       const inputElement = document.querySelector('.text-input') as HTMLInputElement
@@ -823,7 +823,7 @@ function getModelURL() {
   return `/models/${model_path}`
 }
 
-const handleGlobalMouseMove = (event: MouseEvent) => {
+function handleGlobalMouseMove(event: MouseEvent) {
   // 更新鼠标位置
   mouseX.value = event.clientX
   mouseY.value = event.clientY
@@ -1030,7 +1030,7 @@ onUnmounted(() => {
         title="打开设置"
         @click="showSettings = true"
       >
-        ⚙️
+        <div class="i-carbon-settings text-18px" />
       </button>
     </div>
 
@@ -1229,8 +1229,6 @@ onUnmounted(() => {
   border-right: 8px solid transparent;
   border-top: 8px solid #ddd;
 }
-
-
 
 /* 设置面板样式 */
 .settings-overlay {
