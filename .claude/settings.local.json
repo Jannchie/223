@@ -4,7 +4,13 @@
       "Bash(pnpm remove:*)",
       "Bash(pnpm install:*)",
       "Bash(npm run build:*)",
-      "Bash(pnpm add:*)"
+      "Bash(pnpm add:*)",
+      "WebSearch",
+      "WebFetch(domain:ai-sdk.dev)",
+      "Bash(npm install:*)",
+      "Bash(node:*)",
+      "Bash(vue-tsc --noEmit)",
+      "Bash(npm run:*)"
     ],
     "deny": [],
     "ask": []

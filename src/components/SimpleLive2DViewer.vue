@@ -3,8 +3,8 @@
 import { Live2DModel } from '@jannchie/pixi-live2d-display'
 import { useLocalStorage } from '@vueuse/core'
 import { Application, Ticker } from 'pixi.js'
-import { onMounted, onUnmounted, ref, watch } from 'vue'
-import { getChatInstance, initOpenAI } from '../utils/openai'
+import { onMounted, onUnmounted, ref, watch, computed } from 'vue'
+import { useChatCompatible } from '../composables/useChat'
 
 // 输入框相关状态
 const inputText = ref('')
@@ -24,10 +24,56 @@ const bubblePositionY = ref(0)
 // 说话动画相关状态
 const speakingTimer = ref<NodeJS.Timeout | null>(null)
 
-// OpenAI 配置
-const apiKey = useLocalStorage('openai-api-key', '')
-const baseURL = useLocalStorage('openai-base-url', 'https://api.openai.com/v1')
+// 聊天功能集成
+const {
+  isTyping: chatIsTyping,
+  currentResponse: chatCurrentResponse,
+  error: chatError,
+  config: chatConfig,
+  sendMessage: chatSendMessage,
+  updateConfig
+} = useChatCompatible()
+
+// 兼容旧版本的状态映射
+const apiKey = computed({
+  get: () => chatConfig.value.apiKey,
+  set: (value: string) => updateConfig({ apiKey: value })
+})
+const baseURL = computed({
+  get: () => chatConfig.value.baseURL || 'https://api.openai.com/v1',
+  set: (value: string) => updateConfig({ baseURL: value })
+})
 const showSettings = ref(false)
+
+// 映射聊天状态到旧版本变量
+watch(chatIsTyping, (newValue) => {
+  isTyping.value = newValue
+})
+
+watch(chatCurrentResponse, (newValue) => {
+  currentResponse.value = newValue
+  if (newValue) {
+    showBubble.value = true
+    bubbleContent.value = newValue
+    updateBubblePosition()
+  }
+})
+
+watch(chatError, (error) => {
+  if (error) {
+    showTemporaryBubble(`错误: ${error}`)
+  }
+})
+
+// 监听聊天完成，显示最终消息
+watch(chatIsTyping, (isTyping) => {
+  if (!isTyping && chatCurrentResponse.value) {
+    // 聊天结束，显示最终消息
+    showBubble.value = true
+    bubbleContent.value = chatCurrentResponse.value
+    updateBubblePosition()
+  }
+})
 
 // 窗口尺寸
 const windowHeight = ref(window.innerHeight)
@@ -203,11 +249,14 @@ const debouncedCalculateCursorPosition = debounce((inputElement: HTMLInputElemen
   calculateCursorPosition(inputElement)
 }, 50)
 
-// 初始化 OpenAI
-function initializeOpenAI() {
+// 初始化聊天服务
+function initializeChatService() {
   if (apiKey.value) {
     try {
-      initOpenAI(apiKey.value, baseURL.value)
+      updateConfig({
+        apiKey: apiKey.value,
+        baseURL: baseURL.value
+      })
       // 显示欢迎消息
       showTemporaryBubble('嗨~我是06娘！快来和我聊天吧~ ✨', 4000)
     }
@@ -228,16 +277,13 @@ async function sendMessage() {
     return
   }
 
-  const chatInstance = getChatInstance()
-  if (!chatInstance) {
+  if (!apiKey.value) {
     showTemporaryBubble('请先配置 OpenAI API Key')
     return
   }
 
   // 清空输入框
   inputText.value = ''
-  isTyping.value = true
-  currentResponse.value = ''
 
   // 用户发送消息后，让角色面向前方（看向用户）
   if (model) {
@@ -252,44 +298,28 @@ async function sendMessage() {
   }
 
   try {
-    await chatInstance.sendMessage(content, {
-      onToken: (token: string) => {
-        currentResponse.value += token
-        showBubble.value = true
-        bubbleContent.value = currentResponse.value
-        updateBubblePosition() // 每次更新内容时也更新气泡位置
-      },
-      onComplete: (fullContent: string) => {
-        isTyping.value = false
-        bubbleContent.value = fullContent
-        updateBubblePosition() // 完成时更新气泡位置
+    await chatSendMessage(content)
+    
+    // AI 回复完成后自动聚焦到输入框
+    setTimeout(() => {
+      const inputElement = document.querySelector('.text-input') as HTMLInputElement
+      if (inputElement) {
+        inputElement.focus()
+        // 确保输入框可见
+        isInputVisible.value = true
+      }
+    }, 100)
 
-        // AI 回复完成后自动聚焦到输入框
-        setTimeout(() => {
-          const inputElement = document.querySelector('.text-input') as HTMLInputElement
-          if (inputElement) {
-            inputElement.focus()
-            // 确保输入框可见
-            isInputVisible.value = true
-          }
-        }, 100)
-
-        // 5秒后隐藏气泡
-        if (bubbleTimeout.value) {
-          clearTimeout(bubbleTimeout.value)
-        }
-        bubbleTimeout.value = setTimeout(() => {
-          showBubble.value = false
-        }, 5000)
-      },
-      onError: (error: string) => {
-        isTyping.value = false
-        showTemporaryBubble(`错误: ${error}`)
-      },
-    })
+    // 5秒后隐藏气泡
+    if (bubbleTimeout.value) {
+      clearTimeout(bubbleTimeout.value)
+    }
+    bubbleTimeout.value = setTimeout(() => {
+      showBubble.value = false
+    }, 5000)
   }
-  catch {
-    isTyping.value = false
+  catch (error) {
+    console.error('发送消息失败:', error)
     showTemporaryBubble('发送消息失败')
   }
 }
@@ -770,7 +800,7 @@ function handleContextMenu(event: MouseEvent) {
 
 // 保存设置
 function saveSettings() {
-  initializeOpenAI()
+  initializeChatService()
   showSettings.value = false
   showTemporaryBubble('设置已保存')
 }
@@ -807,8 +837,8 @@ const handleGlobalMouseMove = (event: MouseEvent) => {
 }
 
 onMounted(async () => {
-  // 初始化 OpenAI
-  initializeOpenAI()
+  // 初始化聊天服务
+  initializeChatService()
 
   // 监听窗口大小变化
   const handleResize = () => {
