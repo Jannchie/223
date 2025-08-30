@@ -75,7 +75,7 @@ async function createWindow() {
     skipTaskbar: true,
     resizable: false,
     type: 'toolbar', // 在某些系统上有助于保持置顶
-    icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
+    icon: path.join(process.env.VITE_PUBLIC, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,
@@ -148,27 +148,30 @@ async function createWindow() {
 // 创建系统托盘函数
 function createTray() {
   try {
-    // 在 Windows 系统上，SVG 文件可能不被支持，使用空的图像创建托盘
-    // 或者创建一个简单的 PNG 图标
     let iconPath: string
 
     if (process.platform === 'win32') {
-      // Windows 需要 ICO 或 PNG 格式
-      iconPath = path.join(__dirname, '..', 'build', 'icon.ico')
+      // Windows 先尝试使用 PNG，如果失败则使用空图标
+      iconPath = path.join(process.env.VITE_PUBLIC, 'icon.png')
       if (fs.existsSync(iconPath)) {
-        tray = new Tray(iconPath)
+        try {
+          tray = new Tray(iconPath)
+        }
+        catch (iconError) {
+          console.warn('Failed to load icon, creating system tray with empty icon:', iconError.message)
+          const emptyIcon = nativeImage.createEmpty()
+          tray = new Tray(emptyIcon)
+        }
       }
       else {
-        // 如果没有图标文件，创建一个最小的托盘
-        console.warn('No icon found, creating system tray with default icon')
-        // Windows 可以使用 nativeImage 创建空图标
+        console.warn('No icon found, creating system tray with empty icon')
         const emptyIcon = nativeImage.createEmpty()
         tray = new Tray(emptyIcon)
       }
     }
     else {
       // macOS 和 Linux 可以使用 PNG
-      iconPath = path.join(process.env.VITE_PUBLIC, 'vite.svg')
+      iconPath = path.join(process.env.VITE_PUBLIC, 'icon.png')
       if (!fs.existsSync(iconPath)) {
         console.warn('Tray icon not found, skipping system tray creation')
         return

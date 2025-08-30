@@ -47,7 +47,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ['pixi.js', 'pixi-live2d-display'],
+    include: ['pixi.js', '@jannchie/pixi-live2d-display'],
     exclude: [],
   },
 })
