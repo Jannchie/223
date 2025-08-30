@@ -1046,7 +1046,6 @@ onUnmounted(() => {
     >
       <div class="bubble-content">
         {{ bubbleContent }}
-        <span v-if="isTyping" class="typing-indicator">|</span>
       </div>
       <div class="bubble-arrow" />
     </div>
@@ -1231,17 +1230,7 @@ onUnmounted(() => {
   border-top: 8px solid #ddd;
 }
 
-/* 打字指示器 */
-.typing-indicator {
-  animation: blink 1s infinite;
-  font-weight: bold;
-  color: #4a9eff;
-}
 
-@keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
-}
 
 /* 设置面板样式 */
 .settings-overlay {
