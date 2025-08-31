@@ -1,14 +1,14 @@
 <!-- eslint-disable no-console -->
 <script setup lang="ts">
+import type { Character } from '../types/chat'
 import { Live2DModel } from '@jannchie/pixi-live2d-display'
 import { useLocalStorage } from '@vueuse/core'
 import { Application, Ticker } from 'pixi.js'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useChatCompatible } from '../composables/useChat'
-import CharacterSelector from './CharacterSelector.vue'
-import CharacterEditor from './CharacterEditor.vue'
 import { characterService } from '../services/character-service'
-import type { Character } from '../types/chat'
+import CharacterEditor from './CharacterEditor.vue'
+import CharacterSelector from './CharacterSelector.vue'
 
 // 输入框相关状态
 const inputText = ref('')
@@ -825,8 +825,8 @@ function cancelSettings() {
 }
 
 // 获取本地模型文件路径
-function getModelURL(modelPath?: string) {
-  const model_path = modelPath || '06-v2.1024/06-v2.model3.json'
+function getModelURL(modelPath = '06-v2.1024/06-v2.model3.json') {
+  const model_path = modelPath
 
   // 在 Electron 环境中使用自定义协议
   if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.getModelPath) {
@@ -841,7 +841,8 @@ function getModelURL(modelPath?: string) {
 async function loadCurrentCharacter() {
   try {
     currentCharacter.value = await characterService.getCurrentCharacterAsync()
-  } catch (error) {
+  }
+  catch (error) {
     console.error('加载当前角色失败:', error)
   }
 }
@@ -860,7 +861,7 @@ async function handleCharacterDelete(character: Character) {
   try {
     await characterService.deleteCharacter(character.id)
     characterSelectorRef.value?.refresh()
-    
+
     // 如果删除的是当前角色，切换到第一个可用角色
     if (currentCharacter.value?.id === character.id) {
       const characters = await characterService.getAllCharacters()
@@ -868,9 +869,10 @@ async function handleCharacterDelete(character: Character) {
         await switchCharacter(characters[0])
       }
     }
-    
+
     showTemporaryBubble(`已删除角色 "${character.name}"`)
-  } catch (error) {
+  }
+  catch (error) {
     console.error('删除角色失败:', error)
     showTemporaryBubble(`删除角色失败: ${error instanceof Error ? error.message : String(error)}`)
   }
@@ -885,12 +887,12 @@ function handleCharacterCreate() {
 async function handleCharacterSave(character: Character) {
   showCharacterEditor.value = false
   characterSelectorRef.value?.refresh()
-  
+
   // 如果保存的是当前角色或者是新创建的角色，切换到该角色
   if (!currentCharacter.value || character.id === currentCharacter.value.id || characterEditorMode.value === 'create') {
     await switchCharacter(character)
   }
-  
+
   showTemporaryBubble(`角色 "${character.name}" 已保存`)
 }
 
@@ -910,17 +912,18 @@ async function switchCharacter(character: Character) {
   try {
     await characterService.setCurrentCharacter(character.id)
     currentCharacter.value = character
-    
+
     // 重新加载 Live2D 模型
     if (character.modelPath) {
       await loadLive2DModel(character.modelPath)
     }
-    
+
     // 重新初始化聊天服务以使用新的角色设定
     initializeChatService()
-    
+
     showTemporaryBubble(`已切换到角色 "${character.name}"`)
-  } catch (error) {
+  }
+  catch (error) {
     console.error('切换角色失败:', error)
     showTemporaryBubble(`切换角色失败: ${error instanceof Error ? error.message : String(error)}`)
   }
@@ -928,43 +931,47 @@ async function switchCharacter(character: Character) {
 
 // 加载 Live2D 模型
 async function loadLive2DModel(modelPath: string) {
-  if (!app) return
-  
+  if (!app) {
+    return
+  }
+
   try {
     // 移除旧模型
     if (model) {
       app.stage.removeChild(model)
+      model.destroy()
     }
-    
+
     const modelURL = getModelURL(modelPath)
     console.log('Loading model from:', modelURL)
-    
+
     // 加载新模型
     model = await Live2DModel.from(modelURL, {
       ticker: Ticker.shared,
     })
-    
+
     console.log('Model loaded successfully')
     model.setRenderer(app.renderer)
     app.stage.addChild(model)
-    
+
     // 设置模型显示
     const initialWidth = canvasWidth.value
     const initialHeight = canvasHeight.value
-    
+
     model.anchor.set(0.5, 0.5)
     model.position.set(initialWidth / 2, initialHeight / 2)
     baseModelScale = Math.min(initialWidth / model.width, initialHeight / model.height) * 0.8
     model.scale.set(baseModelScale * canvasScale.value, baseModelScale * canvasScale.value)
-    
+
     // 重新计算输入框位置
     calculateInputPosition()
-    
+
     // 将模型设为全局变量，方便外部访问
     if (typeof globalThis !== 'undefined') {
       (globalThis as any).live2dModel = model
     }
-  } catch (error) {
+  }
+  catch (error) {
     console.error('模型加载失败:', error)
     showTemporaryBubble(`模型加载失败: ${error instanceof Error ? error.message : String(error)}`)
   }
@@ -995,12 +1002,13 @@ function handleResize() {
 onMounted(async () => {
   // 初始化聊天服务
   initializeChatService()
-  
+
   // 初始化人设服务并加载当前角色
   try {
     await characterService.initialize()
     await loadCurrentCharacter()
-  } catch (error) {
+  }
+  catch (error) {
     console.error('人设服务初始化失败:', error)
   }
 
@@ -1217,14 +1225,14 @@ onUnmounted(() => {
       <div class="settings-panel" @click.stop @keydown.stop @keyup.stop @keypress.stop>
         <!-- 标签导航 -->
         <div class="settings-tabs">
-          <button 
+          <button
             class="tab-button"
             :class="{ active: activeSettingsTab === 'character' }"
             @click="switchSettingsTab('character')"
           >
             角色管理
           </button>
-          <button 
+          <button
             class="tab-button"
             :class="{ active: activeSettingsTab === 'openai' }"
             @click="switchSettingsTab('openai')"

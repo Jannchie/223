@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Character } from '../types/chat'
-import { characterService } from '../services/character-service'
 import { onMounted, ref } from 'vue'
+import { characterService } from '../services/character-service'
 
 // Props
 interface Props {
@@ -10,6 +10,8 @@ interface Props {
 
 const props = defineProps<Props>()
 
+const emit = defineEmits<Emits>()
+
 // Emits
 interface Emits {
   (e: 'select', character: Character): void
@@ -17,8 +19,6 @@ interface Emits {
   (e: 'delete', character: Character): void
   (e: 'create'): void
 }
-
-const emit = defineEmits<Emits>()
 
 // 状态
 const characters = ref<Character[]>([])
@@ -33,16 +33,19 @@ async function loadCharacters() {
   loading.value = true
   try {
     characters.value = await characterService.getAllCharacters()
-    
+
     // 找到当前角色
     if (props.currentCharacterId) {
       currentCharacter.value = characters.value.find(c => c.id === props.currentCharacterId) || null
-    } else if (characters.value.length > 0) {
+    }
+    else if (characters.value.length > 0) {
       currentCharacter.value = characters.value[0]
     }
-  } catch (error) {
+  }
+  catch (error) {
     console.error('加载角色列表失败:', error)
-  } finally {
+  }
+  finally {
     loading.value = false
   }
 }
@@ -65,10 +68,12 @@ function editCharacter(character: Character, event: Event) {
 function deleteCharacter(character: Character, event: Event) {
   event.stopPropagation()
   if (characters.value.length <= 1) {
+    // eslint-disable-next-line no-alert
     alert('不能删除最后一个角色')
     return
   }
-  
+
+  // eslint-disable-next-line no-alert
   if (confirm(`确定要删除角色 "${character.name}" 吗？`)) {
     emit('delete', character)
   }
@@ -107,7 +112,7 @@ function refresh() {
 // 暴露方法给父组件
 defineExpose({
   refresh,
-  loadCharacters
+  loadCharacters,
 })
 </script>
 
@@ -117,9 +122,9 @@ defineExpose({
     <div class="current-character" @click="toggleDropdown">
       <div class="character-info">
         <div v-if="currentCharacter" class="character-avatar">
-          <img 
-            v-if="currentCharacter.avatar" 
-            :src="currentCharacter.avatar" 
+          <img
+            v-if="currentCharacter.avatar"
+            :src="currentCharacter.avatar"
             :alt="currentCharacter.name"
             @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
           >
@@ -136,7 +141,7 @@ defineExpose({
           </div>
         </div>
       </div>
-      <div class="dropdown-arrow" :class="{ 'open': showDropdown }">
+      <div class="dropdown-arrow" :class="{ open: showDropdown }">
         <div class="i-carbon-chevron-down text-14px" />
       </div>
     </div>
@@ -145,27 +150,27 @@ defineExpose({
     <div v-if="showDropdown" class="dropdown-menu">
       <div class="menu-header">
         <span>选择角色</span>
-        <button class="create-btn" @click="createCharacter" title="创建新角色">
+        <button class="create-btn" title="创建新角色" @click="createCharacter">
           <div class="i-carbon-add text-16px" />
         </button>
       </div>
-      
+
       <div v-if="loading" class="loading">
         加载中...
       </div>
-      
+
       <div v-else class="character-list">
-        <div 
-          v-for="character in characters" 
+        <div
+          v-for="character in characters"
           :key="character.id"
           class="character-item"
-          :class="{ 'active': character.id === currentCharacter?.id }"
+          :class="{ active: character.id === currentCharacter?.id }"
           @click="selectCharacter(character)"
         >
           <div class="character-avatar-small">
-            <img 
-              v-if="character.avatar" 
-              :src="character.avatar" 
+            <img
+              v-if="character.avatar"
+              :src="character.avatar"
               :alt="character.name"
               @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
             >
@@ -173,27 +178,29 @@ defineExpose({
               {{ character.name.charAt(0) }}
             </div>
           </div>
-          
+
           <div class="character-info-small">
-            <div class="character-name-small">{{ character.name }}</div>
+            <div class="character-name-small">
+              {{ character.name }}
+            </div>
             <div v-if="character.description" class="character-description-small">
               {{ character.description }}
             </div>
           </div>
-          
+
           <div class="character-actions">
-            <button 
-              class="action-btn edit-btn" 
-              @click="editCharacter(character, $event)"
+            <button
+              class="action-btn edit-btn"
               title="编辑"
+              @click="editCharacter(character, $event)"
             >
               <div class="i-carbon-edit text-14px" />
             </button>
-            <button 
+            <button
               v-if="characters.length > 1"
-              class="action-btn delete-btn" 
-              @click="deleteCharacter(character, $event)"
+              class="action-btn delete-btn"
               title="删除"
+              @click="deleteCharacter(character, $event)"
             >
               <div class="i-carbon-delete text-14px" />
             </button>

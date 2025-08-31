@@ -126,7 +126,7 @@ export class CharacterRepository {
       .filter((character) => {
         const systemPrompt = character.systemPrompt.toLowerCase()
         return traits.some(trait =>
-          systemPrompt.includes(trait.toLowerCase())
+          systemPrompt.includes(trait.toLowerCase()),
         )
       })
       .toArray()

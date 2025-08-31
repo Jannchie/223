@@ -12,7 +12,9 @@
       "Bash(vue-tsc --noEmit)",
       "Bash(npm run:*)",
       "Bash(where convert)",
-      "Bash(npx vue-tsc:*)"
+      "Bash(npx vue-tsc:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": [],
     "ask": []

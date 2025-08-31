@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Character } from '../types/chat'
+import { computed, onMounted, ref, watch } from 'vue'
 import { characterService } from '../services/character-service'
-import { onMounted, ref, watch, computed } from 'vue'
 
 // Props
 interface Props {
@@ -11,6 +11,8 @@ interface Props {
 
 const props = defineProps<Props>()
 
+const emit = defineEmits<Emits>()
+
 // Emits
 interface Emits {
   (e: 'save', character: Character): void
@@ -18,15 +20,13 @@ interface Emits {
   (e: 'delete', character: Character): void
 }
 
-const emit = defineEmits<Emits>()
-
 // 表单数据
 const formData = ref({
   name: '',
   systemPrompt: '',
   modelPath: '',
   avatar: '',
-  description: ''
+  description: '',
 })
 
 // 状态
@@ -47,39 +47,36 @@ const title = computed(() => isEditMode.value ? '编辑角色' : '创建角色')
 
 // 初始化表单数据
 function initFormData() {
-  if (props.character) {
-    formData.value = {
-      name: props.character.name,
-      systemPrompt: props.character.systemPrompt,
-      modelPath: props.character.modelPath || '',
-      avatar: props.character.avatar || '',
-      description: props.character.description || ''
-    }
-  } else {
-    // 创建模式下的默认值
-    formData.value = {
-      name: '',
-      systemPrompt: '',
-      modelPath: '06-v2.1024/06-v2.model3.json',
-      avatar: '',
-      description: ''
-    }
-  }
+  formData.value = props.character
+    ? {
+        name: props.character.name,
+        systemPrompt: props.character.systemPrompt,
+        modelPath: props.character.modelPath || '',
+        avatar: props.character.avatar || '',
+        description: props.character.description || '',
+      }
+    : {
+        name: '',
+        systemPrompt: '',
+        modelPath: '06-v2.1024/06-v2.model3.json',
+        avatar: '',
+        description: '',
+      }
   errors.value = {}
 }
 
 // 验证表单
 function validateForm(): boolean {
   errors.value = {}
-  
+
   if (!formData.value.name.trim()) {
     errors.value.name = '角色名称不能为空'
   }
-  
+
   if (!formData.value.systemPrompt.trim()) {
     errors.value.systemPrompt = '系统提示词不能为空'
   }
-  
+
   return Object.keys(errors.value).length === 0
 }
 
@@ -88,25 +85,21 @@ async function saveCharacter() {
   if (!validateForm()) {
     return
   }
-  
+
   loading.value = true
-  
+
   try {
-    let savedCharacter: Character
-    
-    if (isEditMode.value && props.character) {
-      // 更新现有角色
-      savedCharacter = await characterService.updateCharacter(props.character.id, formData.value)
-    } else {
-      // 创建新角色
-      savedCharacter = await characterService.createCharacter(formData.value)
-    }
-    
+    const savedCharacter: Character = isEditMode.value && props.character
+      ? await characterService.updateCharacter(props.character.id, formData.value)
+      : await characterService.createCharacter(formData.value)
+
     emit('save', savedCharacter)
-  } catch (error) {
+  }
+  catch (error) {
     console.error('保存角色失败:', error)
     errors.value.general = error instanceof Error ? error.message : '保存失败'
-  } finally {
+  }
+  finally {
     loading.value = false
   }
 }
@@ -118,13 +111,17 @@ function cancelEdit() {
 
 // 删除角色
 async function deleteCharacter() {
-  if (!props.character) return
-  
+  if (!props.character) {
+    return
+  }
+
+  // eslint-disable-next-line no-alert
   if (confirm(`确定要删除角色 "${props.character.name}" 吗？此操作不可撤销。`)) {
     try {
       await characterService.deleteCharacter(props.character.id)
       emit('delete', props.character)
-    } catch (error) {
+    }
+    catch (error) {
       console.error('删除角色失败:', error)
       errors.value.general = error instanceof Error ? error.message : '删除失败'
     }
@@ -154,12 +151,12 @@ onMounted(() => {
         </button>
       </div>
     </div>
-    
+
     <div class="editor-content">
       <!-- 基本信息 -->
       <div class="form-section">
         <h4>基本信息</h4>
-        
+
         <div class="form-field">
           <label>角色名称 *</label>
           <input
@@ -168,9 +165,11 @@ onMounted(() => {
             placeholder="输入角色名称"
             :class="{ error: errors.name }"
           >
-          <div v-if="errors.name" class="error-message">{{ errors.name }}</div>
+          <div v-if="errors.name" class="error-message">
+            {{ errors.name }}
+          </div>
         </div>
-        
+
         <div class="form-field">
           <label>角色描述</label>
           <input
@@ -179,11 +178,13 @@ onMounted(() => {
             placeholder="简短描述这个角色"
           >
         </div>
-        
+
         <div class="form-field">
           <label>Live2D 模型</label>
           <select v-model="formData.modelPath">
-            <option value="">选择模型</option>
+            <option value="">
+              选择模型
+            </option>
             <option
               v-for="model in availableModels"
               :key="model.path"
@@ -193,7 +194,7 @@ onMounted(() => {
             </option>
           </select>
         </div>
-        
+
         <div class="form-field">
           <label>头像路径</label>
           <input
@@ -203,7 +204,7 @@ onMounted(() => {
           >
         </div>
       </div>
-      
+
       <!-- 系统提示词 -->
       <div class="form-section">
         <h4>系统提示词 *</h4>
@@ -214,24 +215,26 @@ onMounted(() => {
             placeholder="输入系统提示词，定义角色的性格、说话风格等..."
             :class="{ error: errors.systemPrompt }"
           />
-          <div v-if="errors.systemPrompt" class="error-message">{{ errors.systemPrompt }}</div>
+          <div v-if="errors.systemPrompt" class="error-message">
+            {{ errors.systemPrompt }}
+          </div>
         </div>
       </div>
-      
+
       <!-- 移除了复杂的性格特征设置，只保留系统提示词 -->
     </div>
-    
+
     <!-- 错误信息 -->
     <div v-if="errors.general" class="error-banner">
       {{ errors.general }}
     </div>
-    
+
     <!-- 操作按钮 -->
     <div class="editor-actions">
-      <button class="cancel-btn" @click="cancelEdit" :disabled="loading">
+      <button class="cancel-btn" :disabled="loading" @click="cancelEdit">
         取消
       </button>
-      <button class="save-btn" @click="saveCharacter" :disabled="loading">
+      <button class="save-btn" :disabled="loading" @click="saveCharacter">
         <div v-if="loading" class="loading-spinner" />
         {{ loading ? '保存中...' : '保存' }}
       </button>
