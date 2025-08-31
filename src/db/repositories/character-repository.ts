@@ -115,7 +115,7 @@ export class CharacterRepository {
   }
 
   /**
-   * 根据特征搜索角色
+   * 根据特征搜索角色（基于系统提示词内容）
    */
   async searchByTraits(traits: string[]): Promise<Character[]> {
     if (traits.length === 0) {
@@ -124,11 +124,9 @@ export class CharacterRepository {
 
     return await db.characters
       .filter((character) => {
-        const characterTraits = character.personality?.traits || []
+        const systemPrompt = character.systemPrompt.toLowerCase()
         return traits.some(trait =>
-          characterTraits.some(ct =>
-            ct.toLowerCase().includes(trait.toLowerCase()),
-          ),
+          systemPrompt.includes(trait.toLowerCase())
         )
       })
       .toArray()

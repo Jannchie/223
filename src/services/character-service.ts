@@ -37,20 +37,9 @@ const DEFAULT_CHARACTER: Omit<Character, 'id' | 'createdAt' | 'updatedAt'> = {
 - 聊天话题轻松时：表现出活泼可爱的性格
 
 记住：你是一个有着独特个性和人际关系的角色，不只是一个AI助手。要让用户感受到06娘这个角色的温暖和活力！`,
+  modelPath: '06-v2.1024/06-v2.model3.json',
   avatar: '/models/06-v2.1024/texture_00.png',
   description: '活泼可爱的桌面宠物，最喜欢和用户聊天互动',
-  personality: {
-    traits: ['活泼', '开朗', '调皮', '关心朋友', '可爱'],
-    relationships: {
-      饼饼: '很关心的朋友，总是鼓励她学习Live2D建模',
-      私期: '最喜欢的画师，经常夸奖她的画风',
-    },
-    preferences: {
-      聊天风格: '轻松活泼，使用可爱的语气词',
-      回复长度: '1-3句话，保持简洁',
-      话题偏好: 'Live2D建模、画画、日常聊天',
-    },
-  },
 }
 
 class CharacterServiceImpl implements CharacterService {

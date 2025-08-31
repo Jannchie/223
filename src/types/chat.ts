@@ -45,13 +45,9 @@ export interface Character {
   id: string
   name: string
   systemPrompt: string
+  modelPath?: string // Live2D 模型文件路径
   avatar?: string
   description?: string
-  personality?: {
-    traits: string[]
-    relationships: Record<string, string>
-    preferences: Record<string, string>
-  }
   createdAt: number
   updatedAt: number
 }

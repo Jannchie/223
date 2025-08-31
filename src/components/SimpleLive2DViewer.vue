@@ -5,6 +5,10 @@ import { useLocalStorage } from '@vueuse/core'
 import { Application, Ticker } from 'pixi.js'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useChatCompatible } from '../composables/useChat'
+import CharacterSelector from './CharacterSelector.vue'
+import CharacterEditor from './CharacterEditor.vue'
+import { characterService } from '../services/character-service'
+import type { Character } from '../types/chat'
 
 // 输入框相关状态
 const inputText = ref('')
@@ -44,6 +48,14 @@ const baseURL = computed({
   set: (value: string) => updateConfig({ baseURL: value }),
 })
 const showSettings = ref(false)
+
+// 人设管理相关状态
+const currentCharacter = ref<Character | null>(null)
+const activeSettingsTab = ref<'openai' | 'character'>('openai')
+const showCharacterEditor = ref(false)
+const editingCharacter = ref<Character | null>(null)
+const characterEditorMode = ref<'create' | 'edit'>('create')
+const characterSelectorRef = ref<InstanceType<typeof CharacterSelector> | null>(null)
 
 // 映射聊天状态到旧版本变量
 watch(chatIsTyping, (newValue) => {
@@ -257,8 +269,9 @@ function initializeChatService() {
         apiKey: apiKey.value,
         baseURL: baseURL.value,
       })
-      // 显示欢迎消息
-      showTemporaryBubble('嗨~我是06娘！快来和我聊天吧~', 4000)
+      // 显示欢迎消息，使用当前角色名称
+      const characterName = currentCharacter.value?.name || '06娘'
+      showTemporaryBubble(`嗨~我是${characterName}！快来和我聊天吧~`, 4000)
     }
     catch {
       // 忽略错误
@@ -812,8 +825,8 @@ function cancelSettings() {
 }
 
 // 获取本地模型文件路径
-function getModelURL() {
-  const model_path = '06-v2.1024/06-v2.model3.json'
+function getModelURL(modelPath?: string) {
+  const model_path = modelPath || '06-v2.1024/06-v2.model3.json'
 
   // 在 Electron 环境中使用自定义协议
   if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.getModelPath) {
@@ -822,6 +835,143 @@ function getModelURL() {
 
   // 在开发环境或浏览器中使用相对路径
   return `/models/${model_path}`
+}
+
+// 人设管理相关方法
+async function loadCurrentCharacter() {
+  try {
+    currentCharacter.value = await characterService.getCurrentCharacterAsync()
+  } catch (error) {
+    console.error('加载当前角色失败:', error)
+  }
+}
+
+function handleCharacterSelect(character: Character) {
+  switchCharacter(character)
+}
+
+function handleCharacterEdit(character: Character) {
+  editingCharacter.value = character
+  characterEditorMode.value = 'edit'
+  showCharacterEditor.value = true
+}
+
+async function handleCharacterDelete(character: Character) {
+  try {
+    await characterService.deleteCharacter(character.id)
+    characterSelectorRef.value?.refresh()
+    
+    // 如果删除的是当前角色，切换到第一个可用角色
+    if (currentCharacter.value?.id === character.id) {
+      const characters = await characterService.getAllCharacters()
+      if (characters.length > 0) {
+        await switchCharacter(characters[0])
+      }
+    }
+    
+    showTemporaryBubble(`已删除角色 "${character.name}"`)
+  } catch (error) {
+    console.error('删除角色失败:', error)
+    showTemporaryBubble(`删除角色失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+function handleCharacterCreate() {
+  editingCharacter.value = null
+  characterEditorMode.value = 'create'
+  showCharacterEditor.value = true
+}
+
+async function handleCharacterSave(character: Character) {
+  showCharacterEditor.value = false
+  characterSelectorRef.value?.refresh()
+  
+  // 如果保存的是当前角色或者是新创建的角色，切换到该角色
+  if (!currentCharacter.value || character.id === currentCharacter.value.id || characterEditorMode.value === 'create') {
+    await switchCharacter(character)
+  }
+  
+  showTemporaryBubble(`角色 "${character.name}" 已保存`)
+}
+
+function handleCharacterEditorCancel() {
+  showCharacterEditor.value = false
+  editingCharacter.value = null
+}
+
+async function handleCharacterEditorDelete(character: Character) {
+  showCharacterEditor.value = false
+  editingCharacter.value = null
+  await handleCharacterDelete(character)
+}
+
+// 切换角色
+async function switchCharacter(character: Character) {
+  try {
+    await characterService.setCurrentCharacter(character.id)
+    currentCharacter.value = character
+    
+    // 重新加载 Live2D 模型
+    if (character.modelPath) {
+      await loadLive2DModel(character.modelPath)
+    }
+    
+    // 重新初始化聊天服务以使用新的角色设定
+    initializeChatService()
+    
+    showTemporaryBubble(`已切换到角色 "${character.name}"`)
+  } catch (error) {
+    console.error('切换角色失败:', error)
+    showTemporaryBubble(`切换角色失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+// 加载 Live2D 模型
+async function loadLive2DModel(modelPath: string) {
+  if (!app) return
+  
+  try {
+    // 移除旧模型
+    if (model) {
+      app.stage.removeChild(model)
+    }
+    
+    const modelURL = getModelURL(modelPath)
+    console.log('Loading model from:', modelURL)
+    
+    // 加载新模型
+    model = await Live2DModel.from(modelURL, {
+      ticker: Ticker.shared,
+    })
+    
+    console.log('Model loaded successfully')
+    model.setRenderer(app.renderer)
+    app.stage.addChild(model)
+    
+    // 设置模型显示
+    const initialWidth = canvasWidth.value
+    const initialHeight = canvasHeight.value
+    
+    model.anchor.set(0.5, 0.5)
+    model.position.set(initialWidth / 2, initialHeight / 2)
+    baseModelScale = Math.min(initialWidth / model.width, initialHeight / model.height) * 0.8
+    model.scale.set(baseModelScale * canvasScale.value, baseModelScale * canvasScale.value)
+    
+    // 重新计算输入框位置
+    calculateInputPosition()
+    
+    // 将模型设为全局变量，方便外部访问
+    if (typeof globalThis !== 'undefined') {
+      (globalThis as any).live2dModel = model
+    }
+  } catch (error) {
+    console.error('模型加载失败:', error)
+    showTemporaryBubble(`模型加载失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+function switchSettingsTab(tab: 'openai' | 'character') {
+  activeSettingsTab.value = tab
 }
 
 function handleGlobalMouseMove(event: MouseEvent) {
@@ -845,6 +995,14 @@ function handleResize() {
 onMounted(async () => {
   // 初始化聊天服务
   initializeChatService()
+  
+  // 初始化人设服务并加载当前角色
+  try {
+    await characterService.initialize()
+    await loadCurrentCharacter()
+  } catch (error) {
+    console.error('人设服务初始化失败:', error)
+  }
 
   window.addEventListener('resize', handleResize)
 
@@ -882,7 +1040,9 @@ onMounted(async () => {
   Ticker.shared.maxFPS = 60
   // 移除不必要的 minFPS 设置
 
-  const modelURL = getModelURL()
+  // 使用当前角色的模型路径，如果没有则使用默认路径
+  const modelPath = currentCharacter.value?.modelPath || '06-v2.1024/06-v2.model3.json'
+  const modelURL = getModelURL(modelPath)
   console.log('Loading model from:', modelURL)
 
   // 带重试的模型加载，以防服务器还未准备好
@@ -1055,33 +1215,82 @@ onUnmounted(() => {
   <teleport to="body">
     <div v-if="showSettings" class="settings-overlay" @click="cancelSettings">
       <div class="settings-panel" @click.stop @keydown.stop @keyup.stop @keypress.stop>
-        <h3>OpenAI 设置</h3>
-        <div class="setting-item">
-          <label>API Key:</label>
-          <input
-            v-model="apiKey"
-            type="password"
-            placeholder="输入你的 OpenAI API Key"
-            class="setting-input"
+        <!-- 标签导航 -->
+        <div class="settings-tabs">
+          <button 
+            class="tab-button"
+            :class="{ active: activeSettingsTab === 'character' }"
+            @click="switchSettingsTab('character')"
           >
-        </div>
-        <div class="setting-item">
-          <label>Base URL:</label>
-          <input
-            v-model="baseURL"
-            type="text"
-            placeholder="API 基础地址"
-            class="setting-input"
-          >
-        </div>
-        <div class="setting-actions">
-          <button class="save-btn" @click="saveSettings">
-            保存
+            角色管理
           </button>
-          <button class="cancel-btn" @click="cancelSettings">
-            取消
+          <button 
+            class="tab-button"
+            :class="{ active: activeSettingsTab === 'openai' }"
+            @click="switchSettingsTab('openai')"
+          >
+            OpenAI 设置
           </button>
         </div>
+
+        <!-- 角色管理标签页 -->
+        <div v-if="activeSettingsTab === 'character'" class="tab-content">
+          <h3>角色管理</h3>
+          <CharacterSelector
+            ref="characterSelectorRef"
+            :current-character-id="currentCharacter?.id"
+            @select="handleCharacterSelect"
+            @edit="handleCharacterEdit"
+            @delete="handleCharacterDelete"
+            @create="handleCharacterCreate"
+          />
+        </div>
+
+        <!-- OpenAI 设置标签页 -->
+        <div v-if="activeSettingsTab === 'openai'" class="tab-content">
+          <h3>OpenAI 设置</h3>
+          <div class="setting-item">
+            <label>API Key:</label>
+            <input
+              v-model="apiKey"
+              type="password"
+              placeholder="输入你的 OpenAI API Key"
+              class="setting-input"
+            >
+          </div>
+          <div class="setting-item">
+            <label>Base URL:</label>
+            <input
+              v-model="baseURL"
+              type="text"
+              placeholder="API 基础地址"
+              class="setting-input"
+            >
+          </div>
+          <div class="setting-actions">
+            <button class="save-btn" @click="saveSettings">
+              保存
+            </button>
+            <button class="cancel-btn" @click="cancelSettings">
+              取消
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </teleport>
+
+  <!-- 人设编辑器弹窗 -->
+  <teleport to="body">
+    <div v-if="showCharacterEditor" class="editor-overlay" @click="handleCharacterEditorCancel">
+      <div class="editor-container" @click.stop>
+        <CharacterEditor
+          :character="editingCharacter"
+          :mode="characterEditorMode"
+          @save="handleCharacterSave"
+          @cancel="handleCharacterEditorCancel"
+          @delete="handleCharacterEditorDelete"
+        />
       </div>
     </div>
   </teleport>
@@ -1138,7 +1347,7 @@ onUnmounted(() => {
   padding: 12px 16px;
   width: 100%;
   border: 1px solid #ddd;
-  border-radius: 8px;
+  border-radius: 12px;
   font-size: 14px;
   background: rgba(255, 255, 255, 0.9);
   outline: none;
@@ -1249,18 +1458,115 @@ onUnmounted(() => {
 .settings-panel {
   background: rgba(255, 255, 255, 0.95);
   border-radius: 12px;
-  padding: 24px;
-  min-width: 320px;
-  max-width: 400px;
+  padding: 0;
+  min-width: 400px;
+  max-width: 500px;
+  min-height: 500px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
   pointer-events: auto;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
-.settings-panel h3 {
+/* 标签页导航样式 */
+.settings-tabs {
+  display: flex;
+  border-bottom: 1px solid #e0e0e0;
+  background: #f8f9fa;
+  border-radius: 12px 12px 0 0;
+}
+
+.tab-button {
+  flex: 1;
+  padding: 16px 20px;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 12px 12px 0 0;
+}
+
+.tab-button:first-child {
+  border-radius: 12px 0 0 0;
+}
+
+.tab-button:last-child {
+  border-radius: 0 12px 0 0;
+}
+
+.tab-button:hover {
+  background: rgba(74, 158, 255, 0.1);
+  color: #333;
+}
+
+.tab-button.active {
+  background: white;
+  color: #4a9eff;
+  font-weight: 600;
+  border-bottom: 2px solid #4a9eff;
+}
+
+/* 标签页内容样式 */
+.tab-content {
+  padding: 24px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 400px;
+  /* 确保滚动条样式美观 */
+  scrollbar-width: thin;
+  scrollbar-color: #ccc transparent;
+}
+
+.tab-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tab-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tab-content::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 3px;
+}
+
+.tab-content::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}
+
+.tab-content h3 {
   margin: 0 0 20px 0;
   color: #333;
   font-size: 18px;
   text-align: center;
+}
+
+/* 人设编辑器弹窗样式 */
+.editor-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 11000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+}
+
+.editor-container {
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: auto;
+  pointer-events: auto;
 }
 
 .setting-item {
