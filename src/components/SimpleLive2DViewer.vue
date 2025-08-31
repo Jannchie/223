@@ -1114,7 +1114,7 @@ onUnmounted(() => {
   z-index: 100;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   -webkit-app-region: no-drag;
   pointer-events: auto;
@@ -1160,12 +1160,12 @@ onUnmounted(() => {
 
 /* 设置按钮样式 */
 .settings-button {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   border: none;
-  border-radius: 50%;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.9);
-  font-size: 18px;
+  font-size: 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
