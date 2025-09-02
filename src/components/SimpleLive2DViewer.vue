@@ -56,7 +56,7 @@ const showSettings = ref(false)
 
 // 人设管理相关状态
 const currentCharacter = ref<Character | null>(null)
-const activeSettingsTab = ref<'openai' | 'character' | 'roast' | 'recording'>('openai')
+const activeSettingsTab = ref<'openai' | 'character' | 'roast' | 'recording' | 'gaze'>('openai')
 const isRecordingWindowOpen = ref(false)
 const isInRecordingWindow = ref(false)
 const showCharacterEditor = ref(false)
@@ -123,6 +123,18 @@ const app = new Application()
 // 目光追踪相关状态
 const gazeTargetX = ref<number | null>(null)
 const gazeTargetY = ref<number | null>(null)
+
+// 定期目光锁定相关状态
+const gazeAtUserConfig = useLocalStorage('gaze-at-user-config', {
+  enabled: true, // 是否启用定期目光锁定
+  intervalMinutes: 1, // 基础间隔分钟数
+  lockDurationSeconds: 3, // 基础锁定持续时间（秒）
+  randomizeInterval: true, // 是否随机化间隔时间
+  randomizeDuration: true, // 是否随机化锁定时间
+  randomOffset: true // 是否添加随机偏移（保留但暂时不用）
+})
+const gazeAtUserTimer = ref<NodeJS.Timeout | null>(null)
+const isGazingAtUser = ref(false)
 
 // 记录上次的目标值，用于检测变化
 const lastTargetX = ref(0)
@@ -416,6 +428,146 @@ function handleKeyDown(event: KeyboardEvent) {
   }
 }
 
+// 计算用户位置（屏幕中心）
+function getUserPosition(): { x: number, y: number } {
+  // 简单地返回屏幕中心作为"用户位置"
+  return {
+    x: window.innerWidth / 2,
+    y: window.innerHeight / 2
+  }
+}
+
+// 获取随机化的间隔时间（毫秒）
+function getRandomizedInterval(): number {
+  const baseIntervalMs = gazeAtUserConfig.value.intervalMinutes * 60 * 1000
+  
+  if (!gazeAtUserConfig.value.randomizeInterval) {
+    return baseIntervalMs
+  }
+  
+  // 在基础时间的 50%-150% 之间随机
+  const randomFactor = 0.5 + Math.random() * 1.0 // 0.5 到 1.5
+  return Math.round(baseIntervalMs * randomFactor)
+}
+
+// 获取随机化的锁定持续时间（毫秒）
+function getRandomizedDuration(): number {
+  const baseDurationMs = gazeAtUserConfig.value.lockDurationSeconds * 1000
+  
+  if (!gazeAtUserConfig.value.randomizeDuration) {
+    return baseDurationMs
+  }
+  
+  // 在基础时间的 70%-130% 之间随机
+  const randomFactor = 0.7 + Math.random() * 0.6 // 0.7 到 1.3
+  return Math.round(baseDurationMs * randomFactor)
+}
+
+// 开始目光锁定用户
+function startGazeAtUser() {
+  if (!gazeAtUserConfig.value.enabled || isGazingAtUser.value || !model) {
+    return
+  }
+
+  try {
+    const modelWithEyesLock = model as any
+    
+    // 检查模型是否支持眼睛锁定功能
+    if (modelWithEyesLock.setEyesAlwaysLookAtCamera) {
+      isGazingAtUser.value = true
+      
+      // 启用眼睛锁定到摄像头
+      modelWithEyesLock.setEyesAlwaysLookAtCamera(true)
+      
+      // 在随机化的时间后停止锁定
+      const lockDuration = getRandomizedDuration()
+      setTimeout(() => {
+        stopGazeAtUser()
+      }, lockDuration)
+    } else {
+      console.warn('此Live2D模型不支持眼睛锁定功能')
+    }
+  } catch (error) {
+    console.error('启动目光锁定失败:', error)
+    isGazingAtUser.value = false
+  }
+}
+
+// 停止目光锁定用户
+function stopGazeAtUser() {
+  if (!isGazingAtUser.value || !model) {
+    return
+  }
+  
+  try {
+    const modelWithEyesLock = model as any
+    
+    // 检查并禁用眼睛锁定
+    if (modelWithEyesLock.setEyesAlwaysLookAtCamera && 
+        modelWithEyesLock.isEyesAlwaysLookAtCamera &&
+        modelWithEyesLock.isEyesAlwaysLookAtCamera()) {
+      modelWithEyesLock.setEyesAlwaysLookAtCamera(false)
+    }
+    
+    isGazingAtUser.value = false
+  } catch (error) {
+    console.error('停止目光锁定失败:', error)
+    isGazingAtUser.value = false
+  }
+}
+
+// 启动定期目光锁定计时器
+function startGazeAtUserTimer() {
+  if (!gazeAtUserConfig.value.enabled) {
+    return
+  }
+  
+  stopGazeAtUserTimer() // 先清除已有的计时器
+  
+  // 使用递归setTimeout而不是setInterval，以便每次都能重新计算随机间隔
+  scheduleNextGaze()
+}
+
+// 安排下一次目光锁定
+function scheduleNextGaze() {
+  if (!gazeAtUserConfig.value.enabled) {
+    return
+  }
+  
+  const intervalMs = getRandomizedInterval()
+  
+  gazeAtUserTimer.value = setTimeout(() => {
+    // 只有在没有其他交互时才执行定期锁定
+    if (!isInputFocused.value && !showSettings.value && !isTyping.value) {
+      startGazeAtUser()
+    }
+    
+    // 安排下一次锁定（递归调用）
+    scheduleNextGaze()
+  }, intervalMs)
+}
+
+// 停止定期目光锁定计时器
+function stopGazeAtUserTimer() {
+  if (gazeAtUserTimer.value) {
+    clearTimeout(gazeAtUserTimer.value)
+    gazeAtUserTimer.value = null
+  }
+  stopGazeAtUser() // 同时停止当前的锁定
+}
+
+// 更新目光锁定配置
+function updateGazeAtUserConfig(newConfig: Partial<typeof gazeAtUserConfig.value>) {
+  gazeAtUserConfig.value = { ...gazeAtUserConfig.value, ...newConfig }
+  
+  // 重新启动计时器以应用新配置
+  if (gazeAtUserConfig.value.enabled) {
+    startGazeAtUserTimer()
+  } else {
+    stopGazeAtUserTimer()
+  }
+}
+
 // 将钩子函数暴露到全局
 if (typeof globalThis !== 'undefined') {
   (globalThis as any).setGazeTarget = setGazeTarget;
@@ -508,9 +660,15 @@ function updateGazeParameters() {
     return
   }
 
+  // 如果正在使用Live2D内置眼睛锁定功能，跳过常规目光追踪
+  if (isGazingAtUser.value) {
+    return
+  }
+
   let targetScreenX = 0
   let targetScreenY = 0
   let sourceType = ''
+  
   // 如果设置了目标坐标，使用目标坐标；否则使用鼠标坐标
   if (gazeTargetX.value !== null && gazeTargetY.value !== null) {
     targetScreenX = gazeTargetX.value
@@ -999,7 +1157,7 @@ async function loadLive2DModel(modelPath: string) {
   }
 }
 
-function switchSettingsTab(tab: 'openai' | 'character' | 'roast' | 'recording') {
+function switchSettingsTab(tab: 'openai' | 'character' | 'roast' | 'recording' | 'gaze') {
   activeSettingsTab.value = tab
 }
 
@@ -1366,12 +1524,15 @@ onMounted(async () => {
   // 监听electron后端的全局鼠标位置
   if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.onMousePosition) {
     (globalThis as any).electronAPI.onMousePosition((position: { x: number, y: number }) => {
-      // 如果输入框聚焦中，忽略鼠标位置事件，让光标跟踪继续工作
-      if (!isInputFocused.value) {
+      // 如果输入框聚焦中或正在锁定用户，忽略鼠标位置事件
+      if (!isInputFocused.value && !isGazingAtUser.value) {
         setGazeTarget(position.x, position.y)
       }
     })
   }
+
+  // 启动定期目光锁定计时器
+  startGazeAtUserTimer()
 })
 
 // 组件卸载时清理事件监听器
@@ -1414,6 +1575,9 @@ onUnmounted(() => {
   }
   // 清理窗口大小监听器
   window.removeEventListener('resize', handleResize)
+  
+  // 清理定期目光锁定计时器
+  stopGazeAtUserTimer()
 })
 </script>
 
@@ -1532,6 +1696,13 @@ onUnmounted(() => {
             @click="switchSettingsTab('recording')"
           >
             录制窗口
+          </button>
+          <button
+            class="tab-button"
+            :class="{ active: activeSettingsTab === 'gaze' }"
+            @click="switchSettingsTab('gaze')"
+          >
+            目光跟踪
           </button>
         </div>
 
@@ -1743,6 +1914,164 @@ onUnmounted(() => {
                 <li>也可通过系统托盘右键菜单快速操作</li>
               </ul>
             </div>
+          </div>
+
+          <div class="setting-actions">
+            <button class="save-btn" @click="saveSettings">
+              保存
+            </button>
+            <button class="cancel-btn" @click="cancelSettings">
+              取消
+            </button>
+          </div>
+        </div>
+
+        <!-- 目光跟踪标签页 -->
+        <div v-if="activeSettingsTab === 'gaze'" class="tab-content">
+          <h3>目光跟踪设置</h3>
+
+          <!-- 定期锁定用户功能开关 -->
+          <div class="setting-item">
+            <label>定期目光锁定:</label>
+            <button
+              class="toggle-btn"
+              :class="{ active: gazeAtUserConfig.enabled }"
+              @click="updateGazeAtUserConfig({ enabled: !gazeAtUserConfig.enabled })"
+            >
+              {{ gazeAtUserConfig.enabled ? '已开启' : '已关闭' }}
+            </button>
+            <p class="setting-description">
+              角色会定期看向用户，增加互动感
+            </p>
+          </div>
+
+          <!-- 锁定间隔设置 -->
+          <div class="setting-item">
+            <label>锁定间隔（分钟）:</label>
+            <select
+              :value="gazeAtUserConfig.intervalMinutes"
+              class="setting-select"
+              :disabled="!gazeAtUserConfig.enabled"
+              @change="updateGazeAtUserConfig({ intervalMinutes: Number(($event.target as HTMLSelectElement).value) })"
+            >
+              <option value="0.5">
+                30 秒
+              </option>
+              <option value="1">
+                1 分钟
+              </option>
+              <option value="2">
+                2 分钟
+              </option>
+              <option value="3">
+                3 分钟
+              </option>
+              <option value="5">
+                5 分钟
+              </option>
+              <option value="10">
+                10 分钟
+              </option>
+            </select>
+          </div>
+
+          <!-- 锁定持续时间设置 -->
+          <div class="setting-item">
+            <label>锁定持续时间（秒）:</label>
+            <select
+              :value="gazeAtUserConfig.lockDurationSeconds"
+              class="setting-select"
+              :disabled="!gazeAtUserConfig.enabled"
+              @change="updateGazeAtUserConfig({ lockDurationSeconds: Number(($event.target as HTMLSelectElement).value) })"
+            >
+              <option value="1">
+                1 秒
+              </option>
+              <option value="2">
+                2 秒
+              </option>
+              <option value="3">
+                3 秒
+              </option>
+              <option value="5">
+                5 秒
+              </option>
+              <option value="7">
+                7 秒
+              </option>
+              <option value="10">
+                10 秒
+              </option>
+            </select>
+          </div>
+
+          <!-- 随机化间隔时间 -->
+          <div class="setting-item">
+            <label>随机化间隔时间:</label>
+            <button
+              class="toggle-btn"
+              :class="{ active: gazeAtUserConfig.randomizeInterval }"
+              :disabled="!gazeAtUserConfig.enabled"
+              @click="updateGazeAtUserConfig({ randomizeInterval: !gazeAtUserConfig.randomizeInterval })"
+            >
+              {{ gazeAtUserConfig.randomizeInterval ? '已开启' : '已关闭' }}
+            </button>
+            <p class="setting-description">
+              在设定间隔的 50%-150% 之间随机变化，让行为更自然
+            </p>
+          </div>
+
+          <!-- 随机化锁定时间 -->
+          <div class="setting-item">
+            <label>随机化锁定时间:</label>
+            <button
+              class="toggle-btn"
+              :class="{ active: gazeAtUserConfig.randomizeDuration }"
+              :disabled="!gazeAtUserConfig.enabled"
+              @click="updateGazeAtUserConfig({ randomizeDuration: !gazeAtUserConfig.randomizeDuration })"
+            >
+              {{ gazeAtUserConfig.randomizeDuration ? '已开启' : '已关闭' }}
+            </button>
+            <p class="setting-description">
+              在设定时长的 70%-130% 之间随机变化，避免过于规律
+            </p>
+          </div>
+
+          <!-- 当前状态显示 -->
+          <div class="setting-item">
+            <label>当前状态:</label>
+            <div class="status-display">
+              <span v-if="!model" class="status-indicator">
+                模型未加载
+              </span>
+              <span v-else-if="!(model as any).setEyesAlwaysLookAtCamera" class="status-indicator warning">
+                模型不支持眼睛锁定
+              </span>
+              <span v-else-if="!gazeAtUserConfig.enabled" class="status-indicator">
+                已停用
+              </span>
+              <span v-else-if="isGazingAtUser" class="status-indicator active">
+                正在锁定用户
+              </span>
+              <span v-else class="status-indicator" :class="{ active: gazeAtUserConfig.enabled }">
+                等待中
+              </span>
+            </div>
+          </div>
+
+          <!-- 测试按钮 -->
+          <div class="setting-item">
+            <label>测试功能:</label>
+            <button
+              class="action-btn"
+              :disabled="!model || !(model as any).setEyesAlwaysLookAtCamera || !gazeAtUserConfig.enabled || isGazingAtUser"
+              @click="startGazeAtUser"
+            >
+              {{ isGazingAtUser ? '正在锁定...' : '立即测试锁定' }}
+            </button>
+            <p v-if="model && !(model as any).setEyesAlwaysLookAtCamera" class="setting-description warning-text">
+              当前Live2D模型不支持眼睛锁定功能
+            </p>
           </div>
 
           <div class="setting-actions">
@@ -2433,5 +2762,58 @@ onUnmounted(() => {
 
 .recording-tips li:last-child {
   margin-bottom: 0;
+}
+
+/* 目光跟踪设置样式 */
+.setting-description {
+  margin: 4px 0 0 0;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.3;
+}
+
+.status-display {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.status-indicator {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #f0f0f0;
+  color: #666;
+  transition: all 0.3s ease;
+}
+
+.status-indicator.active {
+  background: linear-gradient(135deg, #28a745, #20c997);
+  color: white;
+  animation: pulse 2s infinite;
+}
+
+.status-indicator.warning {
+  background: linear-gradient(135deg, #ffc107, #fd7e14);
+  color: white;
+}
+
+.warning-text {
+  color: #dc3545 !important;
+  font-weight: 500;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(40, 167, 69, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
+  }
 }
 </style>
