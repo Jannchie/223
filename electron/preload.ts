@@ -37,6 +37,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onMouseEnterWindow: (callback: () => void) => {
     ipcRenderer.on('mouse-enter-window', callback)
   },
+
+  // 截图相关 API
+  takeScreenshot: () => ipcRenderer.invoke('take-screenshot'),
+  
+  toggleScreenshotRoast: (enabled: boolean) => ipcRenderer.invoke('toggle-screenshot-roast', enabled),
+  
+  setScreenshotInterval: (intervalMinutes: number) => ipcRenderer.invoke('set-screenshot-interval', intervalMinutes),
+  
+  getScreenshotStatus: () => ipcRenderer.invoke('get-screenshot-status'),
+  
+  onScreenshotCaptured: (callback: (screenshot: string) => void) => {
+    ipcRenderer.on('screenshot-captured', (_, screenshot) => callback(screenshot))
+  },
+  
+  onHotkeyScreenshotRoast: (callback: (screenshot: string) => void) => {
+    ipcRenderer.on('hotkey-screenshot-roast', (_, screenshot) => callback(screenshot))
+  },
+  
+  removeScreenshotListeners: () => {
+    ipcRenderer.removeAllListeners('screenshot-captured')
+    ipcRenderer.removeAllListeners('hotkey-screenshot-roast')
+  },
+
+  // 录制窗口相关 API
+  openRecordingWindow: () => ipcRenderer.invoke('open-recording-window'),
+  
+  closeRecordingWindow: () => ipcRenderer.invoke('close-recording-window'),
+  
+  getRecordingWindowStatus: () => ipcRenderer.invoke('get-recording-window-status'),
+  
+  onSetRecordingMode: (callback: (isRecording: boolean) => void) => {
+    ipcRenderer.on('set-recording-mode', (_, isRecording) => callback(isRecording))
+  },
 })
 
 contextBridge.exposeInMainWorld('ipcRenderer', {

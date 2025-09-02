@@ -272,7 +272,6 @@ class ChatServiceImpl implements ChatService {
     const modelInfoMap: Record<string, Record<string, any>> = {
       openai: {
         'gpt-4o': { name: 'GPT-4o', maxTokens: 128_000, costPer1kTokens: 0.005 },
-        'gpt-4o-mini': { name: 'GPT-4o Mini', maxTokens: 128_000, costPer1kTokens: 0.000_15 },
         'gpt-4-turbo': { name: 'GPT-4 Turbo', maxTokens: 128_000, costPer1kTokens: 0.01 },
         'gpt-3.5-turbo': { name: 'GPT-3.5 Turbo', maxTokens: 16_385, costPer1kTokens: 0.001 },
       },
@@ -329,6 +328,93 @@ class ChatServiceImpl implements ChatService {
     }
 
     return trimmedMessages
+  }
+
+  // 发送带图片的消息
+  async sendMessageWithImage(
+    text: string,
+    imageBase64: string,
+    config: ChatConfig,
+    systemPrompt: string,
+    callbacks: StreamingCallbacks,
+  ): Promise<void> {
+    try {
+      // 验证配置
+      if (!this.validateConfig(config)) {
+        callbacks.onError?.('聊天配置无效')
+        return
+      }
+
+      // 创建模型实例
+      const model = this.createModel(config)
+
+      // 准备带图片的消息
+      const messages = [
+        {
+          role: 'user' as const,
+          content: [
+            {
+              type: 'text' as const,
+              text,
+            },
+            {
+              type: 'image' as const,
+              image: imageBase64,
+            },
+          ],
+        },
+      ]
+
+      // 执行流式请求
+      const { textStream, usage } = await streamText({
+        model,
+        system: systemPrompt,
+        messages,
+        temperature: config.temperature || 0.8,
+      })
+
+      let fullContent = ''
+
+      // 处理流式响应
+      for await (const delta of textStream) {
+        fullContent += delta
+        callbacks.onToken?.(delta)
+      }
+
+      // 等待使用统计
+      const finalUsage = await usage
+
+      // 传递元数据
+      callbacks.onMetadata?.({
+        model: config.model,
+        provider: config.provider,
+        tokenCount: finalUsage.totalTokens,
+      })
+
+      // 完成回调
+      callbacks.onComplete?.(fullContent)
+    }
+    catch (error) {
+      console.error('图片聊天服务错误:', error)
+
+      let errorMessage = '发送图片消息失败'
+      if (error instanceof Error) {
+        errorMessage = error.message
+      }
+
+      // 处理常见错误
+      if (errorMessage.includes('401') || errorMessage.includes('Invalid API key')) {
+        errorMessage = 'API Key 无效，请检查设置'
+      }
+      else if (errorMessage.includes('429') || errorMessage.includes('quota')) {
+        errorMessage = 'API 配额不足或请求过于频繁'
+      }
+      else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+        errorMessage = '网络连接失败，请检查网络设置'
+      }
+
+      callbacks.onError?.(errorMessage)
+    }
   }
 }
 

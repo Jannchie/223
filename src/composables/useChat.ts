@@ -32,7 +32,7 @@ export function useChat(): UseChatReturn {
   // 配置状态
   const config = ref<ChatConfig>({
     provider: 'openai' as AIProvider,
-    model: 'gpt-4.1-nano',
+    model: 'gpt-4.1-mini',
     apiKey: '',
     baseURL: 'https://api.openai.com/v1',
     temperature: 0.7,

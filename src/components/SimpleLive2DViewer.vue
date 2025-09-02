@@ -1,12 +1,17 @@
 <!-- eslint-disable no-console -->
 <script setup lang="ts">
 import type { Character } from '../types/chat'
+import type { RoastStyle } from '../utils/screenshot-prompts'
+import type { RoastResult, ScreenshotRoastConfig } from '../utils/screenshot-roast'
 import { Live2DModel } from '@jannchie/pixi-live2d-display'
 import { useLocalStorage } from '@vueuse/core'
 import { Application, Ticker } from 'pixi.js'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useChatCompatible } from '../composables/useChat'
 import { characterService } from '../services/character-service'
+import { chatService } from '../services/chat-service'
+import { getRoastPrompt } from '../utils/screenshot-prompts'
+import { RoastHistoryManager, ScreenshotRoastManager } from '../utils/screenshot-roast'
 import CharacterEditor from './CharacterEditor.vue'
 import CharacterSelector from './CharacterSelector.vue'
 
@@ -51,11 +56,28 @@ const showSettings = ref(false)
 
 // 人设管理相关状态
 const currentCharacter = ref<Character | null>(null)
-const activeSettingsTab = ref<'openai' | 'character'>('openai')
+const activeSettingsTab = ref<'openai' | 'character' | 'roast' | 'recording'>('openai')
+const isRecordingWindowOpen = ref(false)
+const isInRecordingWindow = ref(false)
 const showCharacterEditor = ref(false)
 const editingCharacter = ref<Character | null>(null)
 const characterEditorMode = ref<'create' | 'edit'>('create')
 const characterSelectorRef = ref<InstanceType<typeof CharacterSelector> | null>(null)
+
+// 截图吐槽相关状态
+const screenshotRoastManager = ref<ScreenshotRoastManager | null>(null)
+const roastHistoryManager = new RoastHistoryManager()
+const roastConfig = useLocalStorage<ScreenshotRoastConfig>('screenshot-roast-config', {
+  enabled: false,
+  interval: 5,
+  style: 'default',
+  autoTrigger: false,
+})
+const currentRoast = ref<RoastResult | null>(null)
+const isRoasting = ref(false)
+const roastHistory = ref<RoastResult[]>([])
+const showRoastBubble = ref(false)
+const roastBubbleContent = ref('')
 
 // 映射聊天状态到旧版本变量
 watch(chatIsTyping, (newValue) => {
@@ -977,8 +999,206 @@ async function loadLive2DModel(modelPath: string) {
   }
 }
 
-function switchSettingsTab(tab: 'openai' | 'character') {
+function switchSettingsTab(tab: 'openai' | 'character' | 'roast' | 'recording') {
   activeSettingsTab.value = tab
+}
+
+// 打开录制窗口
+async function openRecordingWindow() {
+  try {
+    if (globalThis.electronAPI?.openRecordingWindow) {
+      const success = await globalThis.electronAPI.openRecordingWindow()
+      if (success) {
+        isRecordingWindowOpen.value = true
+        showTemporaryBubble('录制窗口已打开')
+      }
+    }
+  }
+  catch (error) {
+    console.error('打开录制窗口失败:', error)
+    showTemporaryBubble('打开录制窗口失败')
+  }
+}
+
+// 关闭录制窗口
+async function closeRecordingWindow() {
+  try {
+    if (globalThis.electronAPI?.closeRecordingWindow) {
+      const success = await globalThis.electronAPI.closeRecordingWindow()
+      if (success) {
+        isRecordingWindowOpen.value = false
+        showTemporaryBubble('录制窗口已关闭')
+      }
+    }
+  }
+  catch (error) {
+    console.error('关闭录制窗口失败:', error)
+    showTemporaryBubble('关闭录制窗口失败')
+  }
+}
+
+// 切换录制窗口
+async function toggleRecordingWindow() {
+  await (isRecordingWindowOpen.value ? closeRecordingWindow() : openRecordingWindow())
+}
+
+// 初始化截图吐槽管理器
+function initScreenshotRoastManager() {
+  if (!screenshotRoastManager.value) {
+    const streamingCallbacks = {
+      onStart: handleRoastStart,
+      onToken: handleRoastToken,
+      onComplete: handleRoastResult,
+      onError: handleRoastError,
+    }
+
+    screenshotRoastManager.value = new ScreenshotRoastManager(
+      chatConfig.value,
+      handleRoastResult,
+      handleRoastError,
+      streamingCallbacks,
+    )
+    screenshotRoastManager.value.updateConfig(roastConfig.value)
+  }
+}
+
+// 开始流式显示吐槽
+function handleRoastStart() {
+  showRoastBubble.value = true
+  roastBubbleContent.value = ''
+}
+
+// 处理流式吐槽 token
+function handleRoastToken(token: string) {
+  roastBubbleContent.value += token
+}
+
+// 处理吐槽结果
+function handleRoastResult(result: RoastResult) {
+  currentRoast.value = result
+  roastHistoryManager.addRoast(result)
+  roastHistory.value = roastHistoryManager.getHistory()
+
+  // 确保最终内容正确
+  roastBubbleContent.value = result.text
+
+  // 5秒后隐藏
+  setTimeout(() => {
+    showRoastBubble.value = false
+  }, 5000)
+}
+
+// 处理吐槽错误
+function handleRoastError(error: string) {
+  showTemporaryBubble(`吐槽失败: ${error}`)
+}
+
+// 手动触发吐槽
+async function triggerManualRoast() {
+  if (!screenshotRoastManager.value) {
+    initScreenshotRoastManager()
+  }
+
+  isRoasting.value = true
+
+  try {
+    await screenshotRoastManager.value!.triggerRoast()
+  }
+  catch (error) {
+    console.error('手动吐槽失败:', error)
+  }
+  finally {
+    isRoasting.value = false
+  }
+}
+
+// 更新吐槽配置
+function updateRoastConfig(newConfig: Partial<ScreenshotRoastConfig>) {
+  roastConfig.value = { ...roastConfig.value, ...newConfig }
+
+  if (screenshotRoastManager.value) {
+    screenshotRoastManager.value.updateConfig(roastConfig.value)
+  }
+}
+
+// 切换自动吐槽
+function toggleAutoRoast() {
+  updateRoastConfig({
+    enabled: !roastConfig.value.enabled,
+    autoTrigger: !roastConfig.value.enabled,
+  })
+}
+
+// 设置吐槽间隔
+function setRoastInterval(minutes: number) {
+  updateRoastConfig({ interval: minutes })
+}
+
+// 设置吐槽风格
+function setRoastStyle(style: RoastStyle) {
+  updateRoastConfig({ style })
+}
+
+// 清空吐槽历史
+function clearRoastHistory() {
+  roastHistoryManager.clearHistory()
+  roastHistory.value = []
+  currentRoast.value = null
+}
+
+// 处理快捷键触发的截图吐槽
+async function handleHotkeyScreenshotRoast(screenshot: string) {
+  if (isRoasting.value) {
+    showTemporaryBubble('吐槽正在进行中，请稍后...')
+    return
+  }
+
+  if (!screenshotRoastManager.value) {
+    initScreenshotRoastManager()
+  }
+
+  // F7 快捷键静默触发，不显示提示
+
+  // 直接生成吐槽，使用现有的 generateRoast 逻辑
+  isRoasting.value = true
+  handleRoastStart() // 开始流式显示
+
+  try {
+    const prompt = getRoastPrompt(roastConfig.value.style)
+    const roastText = '你是一个桌面 ai，正在和用户一起观看屏幕。请对屏幕内容，进行吐槽，不要使用 emoji！'
+
+    const callbacks = {
+      onToken: (token: string) => {
+        handleRoastToken(token) // 流式显示token
+      },
+      onComplete: (content: string) => {
+        const result = {
+          text: content,
+          timestamp: Date.now(),
+        }
+        handleRoastResult(result)
+      },
+      onError: (error: string) => {
+        handleRoastError(`吐槽生成失败: ${error}`)
+      },
+    }
+
+    // 使用 chatService 发送图片消息
+    await chatService.sendMessageWithImage(
+      roastText,
+      screenshot,
+      chatConfig.value,
+      prompt,
+      callbacks,
+    )
+  }
+  catch (error) {
+    console.error('吐槽失败:', error)
+    handleRoastError('吐槽失败')
+  }
+  finally {
+    isRoasting.value = false
+  }
 }
 
 function handleGlobalMouseMove(event: MouseEvent) {
@@ -1010,6 +1230,38 @@ onMounted(async () => {
   }
   catch (error) {
     console.error('人设服务初始化失败:', error)
+  }
+
+  // 获取录制窗口状态
+  try {
+    if (globalThis.electronAPI?.getRecordingWindowStatus) {
+      isRecordingWindowOpen.value = await globalThis.electronAPI.getRecordingWindowStatus()
+    }
+  }
+  catch (error) {
+    console.error('获取录制窗口状态失败:', error)
+  }
+
+  // 检查当前是否为录制窗口
+  const urlParams = new URLSearchParams(globalThis.location.search)
+  isInRecordingWindow.value = urlParams.get('recording') === 'true'
+
+  // 监听录制模式设置
+  if (globalThis.electronAPI?.onSetRecordingMode) {
+    globalThis.electronAPI.onSetRecordingMode((isRecording) => {
+      isInRecordingWindow.value = isRecording
+    })
+  }
+
+  // 初始化截图吐槽管理器
+  initScreenshotRoastManager()
+
+  // 加载吐槽历史
+  roastHistory.value = roastHistoryManager.getHistory()
+
+  // 监听快捷键截图吐槽事件
+  if ((globalThis as any).electronAPI?.onHotkeyScreenshotRoast) {
+    (globalThis as any).electronAPI.onHotkeyScreenshotRoast(handleHotkeyScreenshotRoast)
   }
 
   window.addEventListener('resize', handleResize)
@@ -1128,6 +1380,17 @@ onUnmounted(() => {
     (globalThis as any).electronAPI.removeMousePositionListener()
   }
 
+  // 清理截图监听器
+  if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.removeScreenshotListeners) {
+    (globalThis as any).electronAPI.removeScreenshotListeners()
+  }
+
+  // 清理截图吐槽管理器
+  if (screenshotRoastManager.value) {
+    screenshotRoastManager.value.destroy()
+    screenshotRoastManager.value = null
+  }
+
   // 清理全局鼠标事件监听器
   document.removeEventListener('mousemove', handleMouseMove)
   // 清理ticker
@@ -1209,13 +1472,30 @@ onUnmounted(() => {
       :style="{
         left: `${bubblePositionX}px`,
         top: `${bubblePositionY}px`,
-        transform: 'translate(-50%, -100%)',
+        transform: `translate(-50%, -100%) scale(${canvasScale})`,
       }"
     >
       <div class="bubble-content">
         {{ bubbleContent }}
       </div>
       <div class="bubble-arrow" />
+    </div>
+
+    <!-- 吐槽气泡 -->
+    <div
+      v-if="showRoastBubble"
+      class="roast-bubble"
+      :style="{
+        left: `${bubblePositionX}px`,
+        top: `${bubblePositionY - 20}px`,
+        transform: `translate(-50%, -100%) scale(${canvasScale})`,
+        opacity: roastBubbleContent.trim() ? 1 : 0,
+      }"
+    >
+      <div class="roast-bubble-content">
+        {{ roastBubbleContent }}
+      </div>
+      <div class="roast-bubble-arrow" />
     </div>
   </div>
 
@@ -1238,6 +1518,20 @@ onUnmounted(() => {
             @click="switchSettingsTab('openai')"
           >
             OpenAI 设置
+          </button>
+          <button
+            class="tab-button"
+            :class="{ active: activeSettingsTab === 'roast' }"
+            @click="switchSettingsTab('roast')"
+          >
+            截图吐槽
+          </button>
+          <button
+            class="tab-button"
+            :class="{ active: activeSettingsTab === 'recording' }"
+            @click="switchSettingsTab('recording')"
+          >
+            录制窗口
           </button>
         </div>
 
@@ -1275,6 +1569,182 @@ onUnmounted(() => {
               class="setting-input"
             >
           </div>
+          <div class="setting-actions">
+            <button class="save-btn" @click="saveSettings">
+              保存
+            </button>
+            <button class="cancel-btn" @click="cancelSettings">
+              取消
+            </button>
+          </div>
+        </div>
+
+        <!-- 截图吐槽标签页 -->
+        <div v-if="activeSettingsTab === 'roast'" class="tab-content">
+          <h3>截图吐槽设置</h3>
+
+          <!-- 功能开关 -->
+          <div class="setting-item">
+            <label>启用自动吐槽:</label>
+            <button
+              class="toggle-btn"
+              :class="{ active: roastConfig.enabled }"
+              @click="toggleAutoRoast"
+            >
+              {{ roastConfig.enabled ? '已开启' : '已关闭' }}
+            </button>
+          </div>
+
+          <!-- 吐槽间隔 -->
+          <div class="setting-item">
+            <label>吐槽间隔（分钟）:</label>
+            <select
+              :value="roastConfig.interval"
+              class="setting-select"
+              @change="setRoastInterval(Number(($event.target as HTMLSelectElement).value))"
+            >
+              <option value="1">
+                1 分钟
+              </option>
+              <option value="3">
+                3 分钟
+              </option>
+              <option value="5">
+                5 分钟
+              </option>
+              <option value="10">
+                10 分钟
+              </option>
+              <option value="15">
+                15 分钟
+              </option>
+              <option value="30">
+                30 分钟
+              </option>
+              <option value="60">
+                60 分钟
+              </option>
+            </select>
+          </div>
+
+          <!-- 吐槽风格 -->
+          <div class="setting-item">
+            <label>吐槽风格:</label>
+            <select
+              :value="roastConfig.style"
+              class="setting-select"
+              @change="setRoastStyle(($event.target as HTMLSelectElement).value as RoastStyle)"
+            >
+              <option value="default">
+                默认 - 幽默风趣
+              </option>
+              <option value="gentle">
+                温柔 - 温暖关怀
+              </option>
+              <option value="savage">
+                毒舌 - 犀利直白
+              </option>
+              <option value="professional">
+                专业 - 建设性建议
+              </option>
+            </select>
+          </div>
+
+          <!-- 手动触发 -->
+          <div class="setting-item">
+            <label>手动触发:</label>
+            <div class="manual-trigger-group">
+              <button
+                class="action-btn"
+                :disabled="isRoasting"
+                @click="triggerManualRoast"
+              >
+                {{ isRoasting ? '正在吐槽...' : '立即吐槽' }}
+              </button>
+              <div class="hotkey-tip">
+                <span class="hotkey-label">快捷键:</span>
+                <kbd class="hotkey-kbd">F7</kbd>
+              </div>
+            </div>
+          </div>
+
+          <!-- 当前吐槽 -->
+          <div v-if="currentRoast" class="current-roast">
+            <h4>最新吐槽</h4>
+            <div class="roast-content">
+              {{ currentRoast.text }}
+            </div>
+            <div class="roast-time">
+              {{ new Date(currentRoast.timestamp).toLocaleString() }}
+            </div>
+          </div>
+
+          <!-- 历史记录 -->
+          <div v-if="roastHistory.length > 0" class="roast-history">
+            <div class="history-header">
+              <h4>历史记录</h4>
+              <button class="clear-btn" @click="clearRoastHistory">
+                清空
+              </button>
+            </div>
+            <div class="history-list">
+              <div
+                v-for="roast in roastHistory.slice(0, 5)"
+                :key="roast.timestamp"
+                class="history-item"
+              >
+                <div class="history-content">
+                  {{ roast.text }}
+                </div>
+                <div class="history-time">
+                  {{ new Date(roast.timestamp).toLocaleString() }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="setting-actions">
+            <button class="save-btn" @click="saveSettings">
+              保存
+            </button>
+            <button class="cancel-btn" @click="cancelSettings">
+              取消
+            </button>
+          </div>
+        </div>
+
+        <!-- 录制窗口标签页 -->
+        <div v-if="activeSettingsTab === 'recording'" class="tab-content">
+          <h3>录制窗口设置</h3>
+          <div class="setting-item">
+            <label>录制窗口:</label>
+            <div class="recording-mode-info">
+              <p class="mode-description">
+                {{ isRecordingWindowOpen ? '录制窗口已打开，可供OBS等录制软件捕获' : '录制窗口已关闭' }}
+              </p>
+              <button
+                class="toggle-btn"
+                :class="{ active: isRecordingWindowOpen }"
+                @click="toggleRecordingWindow"
+              >
+                {{ isRecordingWindowOpen ? '关闭录制窗口' : '打开录制窗口' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="setting-item">
+            <div class="recording-tips">
+              <h4>使用说明:</h4>
+              <ul>
+                <li>主窗口：保持透明，适合日常使用和交互</li>
+                <li>录制窗口：独立窗口，带有背景色，专供录制软件捕获</li>
+                <li>两个窗口显示相同的Live2D角色，互不干扰</li>
+                <li>可以同时使用主窗口进行交互，用录制窗口进行直播/录制</li>
+                <li>也可通过系统托盘右键菜单快速操作</li>
+              </ul>
+            </div>
+          </div>
+
           <div class="setting-actions">
             <button class="save-btn" @click="saveSettings">
               保存
@@ -1407,6 +1877,7 @@ onUnmounted(() => {
   min-width: 150px;
   pointer-events: none;
   -webkit-app-region: no-drag;
+  transform-origin: center bottom;
 }
 
 .bubble-content {
@@ -1445,6 +1916,66 @@ onUnmounted(() => {
   border-left: 8px solid transparent;
   border-right: 8px solid transparent;
   border-top: 8px solid #ddd;
+}
+
+/* 吐槽气泡样式 */
+.roast-bubble {
+  position: absolute;
+  z-index: 201;
+  max-width: 350px;
+  min-width: 150px;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+  animation: roastBubbleIn 0.5s ease-out;
+  transform-origin: center bottom;
+}
+
+.roast-bubble-content {
+  background: rgba(240, 240, 240, 0.95);
+  border: 1px solid #ccc;
+  border-radius: 18px;
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #555;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  position: relative;
+}
+
+.roast-bubble-arrow {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid rgba(240, 240, 240, 0.95);
+}
+
+.roast-bubble-arrow::before {
+  content: '';
+  position: absolute;
+  top: -9px;
+  left: -8px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid #ccc;
+}
+
+/* 吐槽气泡动画 */
+@keyframes roastBubbleIn {
+  0% {
+    transform: translate(-50%, -100%) scale(0.8);
+  }
+  100% {
+    transform: translate(-50%, -100%) scale(1);
+  }
 }
 
 /* 设置面板样式 */
@@ -1640,10 +2171,203 @@ onUnmounted(() => {
   background: #e0e0e0;
 }
 
+/* 截图吐槽设置样式 */
+.toggle-btn {
+  padding: 8px 16px;
+  border: 2px solid #ddd;
+  border-radius: 20px;
+  background: #f8f9fa;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.toggle-btn:hover {
+  border-color: #007bff;
+  background: #e7f3ff;
+}
+
+.toggle-btn.active {
+  border-color: #28a745;
+  background: linear-gradient(135deg, #28a745, #20c997);
+  color: white;
+  box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+}
+
+.setting-select {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: white;
+  font-size: 14px;
+  min-width: 150px;
+}
+
+.setting-select:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.action-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #ff6b6b, #feca57);
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
+}
+
+.action-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+}
+
+.action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.manual-trigger-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.hotkey-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #666;
+  font-size: 12px;
+}
+
+.hotkey-label {
+  font-weight: 500;
+}
+
+.hotkey-kbd {
+  display: inline-block;
+  padding: 4px 8px;
+  background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 11px;
+  font-weight: bold;
+  color: #495057;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  min-width: 24px;
+  text-align: center;
+}
+
+.current-roast {
+  margin-top: 20px;
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(255, 107, 107, 0.1), rgba(254, 202, 87, 0.1));
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  border-radius: 12px;
+}
+
+.current-roast h4 {
+  margin: 0 0 10px 0;
+  color: #ff6b6b;
+  font-size: 16px;
+}
+
+.roast-content {
+  background: rgba(255, 255, 255, 0.9);
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  color: #333;
+  line-height: 1.4;
+}
+
+.roast-time {
+  font-size: 12px;
+  color: #666;
+  text-align: right;
+}
+
+.roast-history {
+  margin-top: 20px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.history-header h4 {
+  margin: 0;
+  color: #333;
+  font-size: 16px;
+}
+
+.clear-btn {
+  padding: 6px 12px;
+  border: 1px solid #dc3545;
+  border-radius: 6px;
+  background: transparent;
+  color: #dc3545;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.clear-btn:hover {
+  background: #dc3545;
+  color: white;
+}
+
+.history-list {
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.history-item {
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 8px;
+  border-left: 3px solid #ff6b6b;
+}
+
+.history-content {
+  font-size: 13px;
+  color: #333;
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+
+.history-time {
+  font-size: 11px;
+  color: #999;
+  text-align: right;
+}
+
 /* 响应式设计 */
 @media (max-width: 600px) {
   .chat-bubble {
     max-width: 250px;
+  }
+
+  .roast-bubble {
+    max-width: 280px;
   }
 
   .bubble-content {
@@ -1651,10 +2375,63 @@ onUnmounted(() => {
     padding: 10px 14px;
   }
 
+  .roast-bubble-content {
+    font-size: 13px;
+    padding: 12px 16px;
+  }
+
   .settings-panel {
     margin: 20px;
     min-width: auto;
     width: calc(100% - 40px);
   }
+}
+
+/* 录制模式相关样式 */
+.recording-mode-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(0, 123, 255, 0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(0, 123, 255, 0.1);
+}
+
+.mode-description {
+  margin: 0;
+  font-size: 14px;
+  color: #555;
+  line-height: 1.4;
+}
+
+.recording-tips {
+  padding: 16px;
+  background: rgba(255, 235, 59, 0.05);
+  border-radius: 8px;
+  border-left: 4px solid #ffc107;
+}
+
+.recording-tips h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #333;
+  font-weight: 600;
+}
+
+.recording-tips ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.recording-tips li {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.4;
+  margin-bottom: 6px;
+}
+
+.recording-tips li:last-child {
+  margin-bottom: 0;
 }
 </style>

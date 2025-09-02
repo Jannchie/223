@@ -4,7 +4,7 @@ import http from 'node:http'
 import path from 'node:path'
 // import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, Menu, nativeImage, protocol, screen, Tray } from 'electron'
+import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, protocol, screen, Tray } from 'electron'
 
 // const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -38,12 +38,18 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null
+let recordingWin: BrowserWindow | null = null // 录制窗口
 let tray: Tray | null = null
 let mouseTrackingInterval: NodeJS.Timeout | null = null
 let lastMousePosition = { x: -1, y: -1 } // 记录上次鼠标位置
 let staticServer: http.Server | null = null
 let serverPort = 0 // 动态分配的端口号
 let alwaysOnTopInterval: NodeJS.Timeout | null = null
+
+// 截图相关变量
+let screenshotRoastTimer: NodeJS.Timeout | null = null
+let screenshotRoastEnabled = false
+let screenshotRoastInterval = 5 * 60 * 1000 // 默认 5 分钟
 
 // GPU 和性能优化配置
 app.commandLine.appendSwitch('--enable-gpu-rasterization')
@@ -111,6 +117,12 @@ async function createWindow() {
     }
   })
 
+  // 设置 IPC 处理器
+  setupIpcHandlers()
+
+  // 注册 F7 快捷键用于截图吐槽
+  registerGlobalShortcuts()
+
   // 移除无效的鼠标进入/离开窗口事件监听
   // 可以在渲染进程中使用 'mouseenter' 和 'mouseleave' 事件，或继续使用全局鼠标跟踪
 
@@ -143,6 +155,50 @@ async function createWindow() {
 
   // 创建系统托盘
   createTray()
+}
+
+// 创建录制窗口
+async function createRecordingWindow() {
+  if (recordingWin && !recordingWin.isDestroyed()) {
+    recordingWin.focus()
+    return
+  }
+
+  recordingWin = new BrowserWindow({
+    width: 800,
+    height: 600,
+    transparent: false,
+    frame: true,
+    alwaysOnTop: false,
+    skipTaskbar: false,
+    resizable: true,
+    title: 'NiNiSan - 录制窗口',
+    backgroundColor: '#f0f0f0',
+    icon: path.join(process.env.VITE_PUBLIC, 'icon.png'),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.mjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  })
+
+  // 加载相同的页面，但传递录制模式参数
+  if (VITE_DEV_SERVER_URL) {
+    recordingWin.loadURL(`${VITE_DEV_SERVER_URL}?recording=true`)
+  }
+  else {
+    recordingWin.loadFile(path.join(RENDERER_DIST, 'index.html'))
+    // 在生产模式下通过postMessage传递参数
+    recordingWin.webContents.once('did-finish-load', () => {
+      recordingWin?.webContents.send('set-recording-mode', true)
+    })
+  }
+
+  recordingWin.on('closed', () => {
+    recordingWin = null
+  })
+
+  return recordingWin
 }
 
 // 创建系统托盘函数
@@ -208,6 +264,21 @@ function createTray() {
           else {
             win.show()
           }
+        }
+      },
+    },
+    {
+      type: 'separator',
+    },
+    {
+      label: recordingWin && !recordingWin.isDestroyed() ? '关闭录制窗口' : '打开录制窗口',
+      type: 'normal',
+      click: () => {
+        if (recordingWin && !recordingWin.isDestroyed()) {
+          recordingWin.close()
+        }
+        else {
+          createRecordingWindow()
         }
       },
     },
@@ -356,6 +427,8 @@ app.on('window-all-closed', () => {
   stopMouseTracking()
   stopAlwaysOnTopCheck()
   stopStaticServer()
+  stopScreenshotRoast()
+  unregisterGlobalShortcuts()
   if (process.platform !== 'darwin') {
     app.quit()
     win = null
@@ -421,11 +494,167 @@ function getContentType(filePath: string): string {
   return mimeTypes[ext] || 'application/octet-stream'
 }
 
+// 截图功能
+async function captureScreenshot(): Promise<string | null> {
+  try {
+    // 获取所有可用的窗口源
+    const sources = await desktopCapturer.getSources({
+      types: ['window'],
+      thumbnailSize: { width: 1920, height: 1080 },
+    })
+
+    if (sources.length === 0) {
+      console.error('No window sources available')
+      return null
+    }
+
+    // 找到当前活动窗口（通常是最前面的窗口）
+    // 我们可以通过窗口名称或者选择第一个非 Electron 应用的窗口
+    let targetSource = sources[0]
+
+    // 尝试找到非当前应用的活动窗口
+    for (const source of sources) {
+      // 跳过空白窗口和我们自己的应用窗口
+      if (source.name
+          && !source.name.includes('NiNiSan')
+          && !source.name.includes('Electron')
+          && source.name.trim() !== '') {
+        targetSource = source
+        break
+      }
+    }
+
+    const screenshot = targetSource.thumbnail
+
+    // 转换为 base64 格式
+    const base64Data = screenshot.toPNG().toString('base64')
+    return `data:image/png;base64,${base64Data}`
+  }
+  catch (error) {
+    console.error('Screenshot capture failed:', error)
+    return null
+  }
+}
+
+// 启动截图吐槽定时器
+function startScreenshotRoast() {
+  if (screenshotRoastTimer) {
+    clearInterval(screenshotRoastTimer)
+  }
+
+  screenshotRoastTimer = setInterval(async () => {
+    if (screenshotRoastEnabled && win && !win.isDestroyed()) {
+      const screenshot = await captureScreenshot()
+      if (screenshot) {
+        win.webContents.send('screenshot-captured', screenshot)
+      }
+    }
+  }, screenshotRoastInterval)
+}
+
+// 停止截图吐槽定时器
+function stopScreenshotRoast() {
+  if (screenshotRoastTimer) {
+    clearInterval(screenshotRoastTimer)
+    screenshotRoastTimer = null
+  }
+}
+
+// 设置 IPC 处理器
+function setupIpcHandlers() {
+  // 手动截图
+  ipcMain.handle('take-screenshot', async () => {
+    return await captureScreenshot()
+  })
+
+  // 启用/禁用截图吐槽
+  ipcMain.handle('toggle-screenshot-roast', (_, enabled: boolean) => {
+    screenshotRoastEnabled = enabled
+    if (enabled) {
+      startScreenshotRoast()
+    }
+    else {
+      stopScreenshotRoast()
+    }
+    return screenshotRoastEnabled
+  })
+
+  // 设置截图间隔
+  ipcMain.handle('set-screenshot-interval', (_, intervalMinutes: number) => {
+    screenshotRoastInterval = intervalMinutes * 60 * 1000
+    if (screenshotRoastEnabled) {
+      startScreenshotRoast() // 重新启动定时器
+    }
+    return screenshotRoastInterval
+  })
+
+  // 获取截图状态
+  ipcMain.handle('get-screenshot-status', () => {
+    return {
+      enabled: screenshotRoastEnabled,
+      interval: screenshotRoastInterval / 60 / 1000, // 转换为分钟
+    }
+  })
+
+  // 打开录制窗口
+  ipcMain.handle('open-recording-window', async () => {
+    await createRecordingWindow()
+    return !!recordingWin
+  })
+
+  // 关闭录制窗口
+  ipcMain.handle('close-recording-window', () => {
+    if (recordingWin && !recordingWin.isDestroyed()) {
+      recordingWin.close()
+      return true
+    }
+    return false
+  })
+
+  // 获取录制窗口状态
+  ipcMain.handle('get-recording-window-status', () => {
+    return recordingWin && !recordingWin.isDestroyed()
+  })
+}
+
+// 注册全局快捷键
+function registerGlobalShortcuts() {
+  try {
+    // 注册 F7 快捷键触发截图吐槽
+    const ret = globalShortcut.register('F7', async () => {
+      if (win && !win.isDestroyed()) {
+        // 触发截图吐槽
+        const screenshot = await captureScreenshot()
+        if (screenshot) {
+          win.webContents.send('hotkey-screenshot-roast', screenshot)
+        }
+      }
+    })
+
+    if (ret) {
+      console.log('F7 快捷键注册成功')
+    }
+    else {
+      console.log('F7 快捷键注册失败')
+    }
+  }
+  catch (error) {
+    console.error('注册快捷键失败:', error)
+  }
+}
+
+// 注销全局快捷键
+function unregisterGlobalShortcuts() {
+  globalShortcut.unregisterAll()
+}
+
 // 应用退出时清理
 app.on('before-quit', () => {
   stopMouseTracking()
   stopAlwaysOnTopCheck()
   stopStaticServer()
+  stopScreenshotRoast()
+  unregisterGlobalShortcuts()
   if (tray) {
     tray.destroy()
     tray = null
