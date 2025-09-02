@@ -61,6 +61,10 @@ const isRecordingWindowOpen = ref(false)
 const isInRecordingWindow = ref(false)
 const showCharacterEditor = ref(false)
 const editingCharacter = ref<Character | null>(null)
+
+// 保存最后选择的角色ID和模型路径
+const lastSelectedCharacterId = useLocalStorage<string | null>('last-selected-character-id', null)
+const lastUsedModelPath = useLocalStorage<string | null>('last-used-model-path', null)
 const characterEditorMode = ref<'create' | 'edit'>('create')
 const characterSelectorRef = ref<InstanceType<typeof CharacterSelector> | null>(null)
 
@@ -131,7 +135,7 @@ const gazeAtUserConfig = useLocalStorage('gaze-at-user-config', {
   lockDurationSeconds: 3, // 基础锁定持续时间（秒）
   randomizeInterval: true, // 是否随机化间隔时间
   randomizeDuration: true, // 是否随机化锁定时间
-  randomOffset: true // 是否添加随机偏移（保留但暂时不用）
+  randomOffset: true, // 是否添加随机偏移（保留但暂时不用）
 })
 const gazeAtUserTimer = ref<NodeJS.Timeout | null>(null)
 const isGazingAtUser = ref(false)
@@ -433,31 +437,31 @@ function getUserPosition(): { x: number, y: number } {
   // 简单地返回屏幕中心作为"用户位置"
   return {
     x: window.innerWidth / 2,
-    y: window.innerHeight / 2
+    y: window.innerHeight / 2,
   }
 }
 
 // 获取随机化的间隔时间（毫秒）
 function getRandomizedInterval(): number {
   const baseIntervalMs = gazeAtUserConfig.value.intervalMinutes * 60 * 1000
-  
+
   if (!gazeAtUserConfig.value.randomizeInterval) {
     return baseIntervalMs
   }
-  
+
   // 在基础时间的 50%-150% 之间随机
-  const randomFactor = 0.5 + Math.random() * 1.0 // 0.5 到 1.5
+  const randomFactor = 0.5 + Math.random() * 1 // 0.5 到 1.5
   return Math.round(baseIntervalMs * randomFactor)
 }
 
 // 获取随机化的锁定持续时间（毫秒）
 function getRandomizedDuration(): number {
   const baseDurationMs = gazeAtUserConfig.value.lockDurationSeconds * 1000
-  
+
   if (!gazeAtUserConfig.value.randomizeDuration) {
     return baseDurationMs
   }
-  
+
   // 在基础时间的 70%-130% 之间随机
   const randomFactor = 0.7 + Math.random() * 0.6 // 0.7 到 1.3
   return Math.round(baseDurationMs * randomFactor)
@@ -471,23 +475,25 @@ function startGazeAtUser() {
 
   try {
     const modelWithEyesLock = model as any
-    
+
     // 检查模型是否支持眼睛锁定功能
     if (modelWithEyesLock.setEyesAlwaysLookAtCamera) {
       isGazingAtUser.value = true
-      
+
       // 启用眼睛锁定到摄像头
       modelWithEyesLock.setEyesAlwaysLookAtCamera(true)
-      
+
       // 在随机化的时间后停止锁定
       const lockDuration = getRandomizedDuration()
       setTimeout(() => {
         stopGazeAtUser()
       }, lockDuration)
-    } else {
+    }
+    else {
       console.warn('此Live2D模型不支持眼睛锁定功能')
     }
-  } catch (error) {
+  }
+  catch (error) {
     console.error('启动目光锁定失败:', error)
     isGazingAtUser.value = false
   }
@@ -498,19 +504,20 @@ function stopGazeAtUser() {
   if (!isGazingAtUser.value || !model) {
     return
   }
-  
+
   try {
     const modelWithEyesLock = model as any
-    
+
     // 检查并禁用眼睛锁定
-    if (modelWithEyesLock.setEyesAlwaysLookAtCamera && 
-        modelWithEyesLock.isEyesAlwaysLookAtCamera &&
-        modelWithEyesLock.isEyesAlwaysLookAtCamera()) {
+    if (modelWithEyesLock.setEyesAlwaysLookAtCamera
+        && modelWithEyesLock.isEyesAlwaysLookAtCamera
+        && modelWithEyesLock.isEyesAlwaysLookAtCamera()) {
       modelWithEyesLock.setEyesAlwaysLookAtCamera(false)
     }
-    
+
     isGazingAtUser.value = false
-  } catch (error) {
+  }
+  catch (error) {
     console.error('停止目光锁定失败:', error)
     isGazingAtUser.value = false
   }
@@ -521,9 +528,9 @@ function startGazeAtUserTimer() {
   if (!gazeAtUserConfig.value.enabled) {
     return
   }
-  
+
   stopGazeAtUserTimer() // 先清除已有的计时器
-  
+
   // 使用递归setTimeout而不是setInterval，以便每次都能重新计算随机间隔
   scheduleNextGaze()
 }
@@ -533,15 +540,15 @@ function scheduleNextGaze() {
   if (!gazeAtUserConfig.value.enabled) {
     return
   }
-  
+
   const intervalMs = getRandomizedInterval()
-  
+
   gazeAtUserTimer.value = setTimeout(() => {
     // 只有在没有其他交互时才执行定期锁定
     if (!isInputFocused.value && !showSettings.value && !isTyping.value) {
       startGazeAtUser()
     }
-    
+
     // 安排下一次锁定（递归调用）
     scheduleNextGaze()
   }, intervalMs)
@@ -559,11 +566,12 @@ function stopGazeAtUserTimer() {
 // 更新目光锁定配置
 function updateGazeAtUserConfig(newConfig: Partial<typeof gazeAtUserConfig.value>) {
   gazeAtUserConfig.value = { ...gazeAtUserConfig.value, ...newConfig }
-  
+
   // 重新启动计时器以应用新配置
   if (gazeAtUserConfig.value.enabled) {
     startGazeAtUserTimer()
-  } else {
+  }
+  else {
     stopGazeAtUserTimer()
   }
 }
@@ -607,13 +615,21 @@ function getCharacterTopPosition(): { x: number, y: number } {
     }
   }
   catch {
-    // 回退到默认位置：使用模型的基本属性估算
-    const modelCenterX = canvasX.value + model.x
-    const modelTop = canvasY.value + model.y - (model.height * model.scale.y) / 2
+    // 如果模型仍然存在，尝试使用基本属性估算
+    if (model && model.x !== undefined) {
+      const modelCenterX = canvasX.value + model.x
+      const modelTop = canvasY.value + model.y - (model.height * model.scale.y) / 2
 
+      return {
+        x: modelCenterX,
+        y: modelTop,
+      }
+    }
+    
+    // 最终回退位置：canvas中心顶部
     return {
-      x: modelCenterX,
-      y: modelTop,
+      x: canvasX.value + (canvasWidth.value * canvasScale.value) / 2,
+      y: canvasY.value,
     }
   }
 }
@@ -668,7 +684,7 @@ function updateGazeParameters() {
   let targetScreenX = 0
   let targetScreenY = 0
   let sourceType = ''
-  
+
   // 如果设置了目标坐标，使用目标坐标；否则使用鼠标坐标
   if (gazeTargetX.value !== null && gazeTargetY.value !== null) {
     targetScreenX = gazeTargetX.value
@@ -1004,8 +1020,13 @@ function cancelSettings() {
   showSettings.value = false
 }
 
-// 获取本地模型文件路径
+// 获取模型文件路径（支持本地和远程URL）
 function getModelURL(modelPath = '06-v2.1024/06-v2.model3.json') {
+  // 如果是完整的 URL（以 http 或 https 开头），直接返回
+  if (modelPath.startsWith('http://') || modelPath.startsWith('https://')) {
+    return modelPath
+  }
+
   const model_path = modelPath
 
   // 在 Electron 环境中使用自定义协议
@@ -1020,7 +1041,43 @@ function getModelURL(modelPath = '06-v2.1024/06-v2.model3.json') {
 // 人设管理相关方法
 async function loadCurrentCharacter() {
   try {
-    currentCharacter.value = await characterService.getCurrentCharacterAsync()
+    // 优先加载上次选择的角色
+    let targetCharacter: Character | null = null
+    
+    if (lastSelectedCharacterId.value) {
+      console.log('尝试加载上次选择的角色:', lastSelectedCharacterId.value)
+      // 确保ID类型匹配：先尝试字符串，再尝试数字
+      targetCharacter = await characterService.getCharacter(lastSelectedCharacterId.value)
+      
+      if (!targetCharacter && !isNaN(Number(lastSelectedCharacterId.value))) {
+        // 如果字符串查找失败，尝试数字查找
+        console.log('尝试数字ID查找:', Number(lastSelectedCharacterId.value))
+        targetCharacter = await characterService.getCharacter(Number(lastSelectedCharacterId.value) as any)
+      }
+      
+      if (!targetCharacter) {
+        console.log('上次选择的角色不存在，重置选择')
+        lastSelectedCharacterId.value = null
+        lastUsedModelPath.value = null
+      }
+    }
+    
+    // 如果没有上次选择的角色，使用角色服务的当前角色
+    if (!targetCharacter) {
+      targetCharacter = await characterService.getCurrentCharacterAsync()
+    }
+    
+    currentCharacter.value = targetCharacter
+    
+    // 更新保存的选择
+    if (targetCharacter) {
+      lastSelectedCharacterId.value = targetCharacter.id.toString()
+      if (targetCharacter.modelPath) {
+        lastUsedModelPath.value = targetCharacter.modelPath
+      }
+      
+      console.log('当前角色:', targetCharacter.name, '模型路径:', targetCharacter.modelPath)
+    }
   }
   catch (error) {
     console.error('加载当前角色失败:', error)
@@ -1071,6 +1128,12 @@ async function handleCharacterSave(character: Character) {
   // 如果保存的是当前角色或者是新创建的角色，切换到该角色
   if (!currentCharacter.value || character.id === currentCharacter.value.id || characterEditorMode.value === 'create') {
     await switchCharacter(character)
+  } else {
+    // 如果编辑的不是当前角色，但用户可能想切换到编辑的角色
+    // 更新保存记录（如果用户之后手动选择这个角色，会记住新的设置）
+    if (character.modelPath) {
+      console.log('更新角色模型路径记录:', character.name, character.modelPath)
+    }
   }
 
   showTemporaryBubble(`角色 "${character.name}" 已保存`)
@@ -1092,6 +1155,14 @@ async function switchCharacter(character: Character) {
   try {
     await characterService.setCurrentCharacter(character.id)
     currentCharacter.value = character
+
+    // 保存最后选择的角色和模型路径（确保ID为字符串格式）
+    lastSelectedCharacterId.value = character.id.toString()
+    if (character.modelPath) {
+      lastUsedModelPath.value = character.modelPath
+    }
+    
+    console.log('保存角色选择:', character.name, 'ID:', character.id.toString())
 
     // 重新加载 Live2D 模型
     if (character.modelPath) {
@@ -1132,6 +1203,13 @@ async function loadLive2DModel(modelPath: string) {
 
     console.log('Model loaded successfully')
     model.setRenderer(app.renderer)
+    
+    // 确保模型背景透明
+    if (model.internalModel && model.internalModel.renderer) {
+      // 设置 Live2D 模型渲染器的透明度
+      model.internalModel.renderer.setMvpMatrix(model.internalModel.renderer._mvpMatrix)
+    }
+    
     app.stage.addChild(model)
 
     // 设置模型显示
@@ -1215,6 +1293,7 @@ function initScreenshotRoastManager() {
       handleRoastResult,
       handleRoastError,
       streamingCallbacks,
+      roastHistoryManager,
     )
     screenshotRoastManager.value.updateConfig(roastConfig.value)
   }
@@ -1234,7 +1313,7 @@ function handleRoastToken(token: string) {
 // 处理吐槽结果
 function handleRoastResult(result: RoastResult) {
   currentRoast.value = result
-  roastHistoryManager.addRoast(result)
+  // 不再在这里添加到历史记录，由 ScreenshotRoastManager 内部处理
   roastHistory.value = roastHistoryManager.getHistory()
 
   // 确保最终内容正确
@@ -1378,16 +1457,18 @@ function handleResize() {
 }
 
 onMounted(async () => {
-  // 初始化聊天服务
-  initializeChatService()
-
   // 初始化人设服务并加载当前角色
   try {
     await characterService.initialize()
     await loadCurrentCharacter()
+    
+    // 角色加载完成后初始化聊天服务（这样欢迎消息会显示正确的角色名）
+    initializeChatService()
   }
   catch (error) {
     console.error('人设服务初始化失败:', error)
+    // 即使角色加载失败，也要初始化聊天服务
+    initializeChatService()
   }
 
   // 获取录制窗口状态
@@ -1451,6 +1532,8 @@ onMounted(async () => {
     height: initialHeight,
     view: canvas,
     backgroundAlpha: 0,
+    backgroundColor: 0x000000, // 设置透明背景色
+    clearBeforeRender: false, // 不清除背景
     powerPreference: 'high-performance', // 使用高性能 GPU
     antialias: false, // 关闭抗锯齿以提升性能
   })
@@ -1575,7 +1658,7 @@ onUnmounted(() => {
   }
   // 清理窗口大小监听器
   window.removeEventListener('resize', handleResize)
-  
+
   // 清理定期目光锁定计时器
   stopGazeAtUserTimer()
 })
@@ -1711,7 +1794,7 @@ onUnmounted(() => {
           <h3>角色管理</h3>
           <CharacterSelector
             ref="characterSelectorRef"
-            :current-character-id="currentCharacter?.id"
+            :current-character-id="currentCharacter?.id?.toString() || null"
             @select="handleCharacterSelect"
             @edit="handleCharacterEdit"
             @delete="handleCharacterDelete"

@@ -60,35 +60,16 @@ class MessageServiceImpl implements MessageService {
 
   private async initializeCurrentSession(): Promise<void> {
     try {
-      // 先检查是否有保存的会话 ID
-      if (this.sessionIdStorage.value) {
-        const savedSession = await repositories.sessions.getById(this.sessionIdStorage.value)
-        if (savedSession) {
-          this.currentSessionId = savedSession.id
-          console.log('恢复保存的会话:', this.currentSessionId)
-          return
-        }
-        else {
-          // 保存的会话不存在，清空存储
-          this.sessionIdStorage.value = ''
-        }
-      }
+      // 每次刷新都创建新对话，不恢复旧会话
+      // 清空之前保存的会话 ID
+      this.sessionIdStorage.value = ''
 
-      // 获取最近的会话作为当前会话
-      const recentSessions = await repositories.sessions.getRecentActive(1)
-      if (recentSessions.length > 0) {
-        this.currentSessionId = recentSessions[0].id
-        this.sessionIdStorage.value = this.currentSessionId
-        console.log('使用最近的会话:', this.currentSessionId)
-      }
-      else {
-        // 如果没有任何会话，创建默认会话
-        const characterId = 'default' // 使用默认人设ID
-        const defaultSession = await this.createSession(characterId, '默认会话')
-        this.currentSessionId = defaultSession.id
-        this.sessionIdStorage.value = this.currentSessionId
-        console.log('创建默认会话:', defaultSession.id)
-      }
+      // 直接创建新会话
+      const characterId = 'default' // 使用默认人设ID
+      const newSession = await this.createSession(characterId, `新对话 ${new Date().toLocaleString()}`)
+      this.currentSessionId = newSession.id
+      this.sessionIdStorage.value = this.currentSessionId
+      console.log('创建新对话:', newSession.id)
     }
     catch (error) {
       console.warn('初始化当前会话失败:', error)

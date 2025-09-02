@@ -3,4 +3,9 @@ body {
   margin: 0;
   display: flex;
   place-items: center;
+  background: transparent;
+}
+
+html {
+  background: transparent;
 }

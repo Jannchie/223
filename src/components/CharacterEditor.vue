@@ -36,8 +36,13 @@ const errors = ref<Record<string, string>>({})
 // 可用的 Live2D 模型列表
 const availableModels = ref([
   { path: '06-v2.1024/06-v2.model3.json', name: '06娘 v2' },
-  // 可以在这里添加更多模型
+  { path: 'https://cdn.jsdelivr.net/gh/Live2D/CubismWebSamples@master/Samples/Resources/Hiyori/Hiyori.model3.json', name: 'Hiyori (官方示例)' },
+  { path: 'custom', name: '自定义路径...' },
 ])
+
+// 自定义模型路径状态
+const isCustomPath = ref(false)
+const customModelPath = ref('')
 
 // 移除复杂的性格特征输入
 
@@ -47,11 +52,13 @@ const title = computed(() => isEditMode.value ? '编辑角色' : '创建角色')
 
 // 初始化表单数据
 function initFormData() {
+  const characterModelPath = props.character?.modelPath || '06-v2.1024/06-v2.model3.json'
+  
   formData.value = props.character
     ? {
         name: props.character.name,
         systemPrompt: props.character.systemPrompt,
-        modelPath: props.character.modelPath || '',
+        modelPath: characterModelPath,
         avatar: props.character.avatar || '',
         description: props.character.description || '',
       }
@@ -62,6 +69,20 @@ function initFormData() {
         avatar: '',
         description: '',
       }
+  
+  // 检查是否是预设模型路径
+  const isPresetModel = availableModels.value.some(model => model.path === characterModelPath && model.path !== 'custom')
+  
+  if (!isPresetModel && characterModelPath) {
+    // 如果不是预设模型，设置为自定义模式
+    isCustomPath.value = true
+    customModelPath.value = characterModelPath
+    formData.value.modelPath = characterModelPath
+  } else {
+    isCustomPath.value = false
+    customModelPath.value = characterModelPath
+  }
+  
   errors.value = {}
 }
 
@@ -130,6 +151,24 @@ async function deleteCharacter() {
 
 // 移除了复杂的性格特征管理方法
 
+// 处理模型路径选择变化
+watch(() => formData.value.modelPath, (newPath) => {
+  if (newPath === 'custom') {
+    isCustomPath.value = true
+    formData.value.modelPath = customModelPath.value
+  } else {
+    isCustomPath.value = false
+    customModelPath.value = newPath
+  }
+})
+
+// 监听自定义路径变化
+watch(() => customModelPath.value, (newPath) => {
+  if (isCustomPath.value) {
+    formData.value.modelPath = newPath
+  }
+})
+
 // 监听 props 变化
 watch([() => props.character, () => props.mode], () => {
   initFormData()
@@ -181,7 +220,7 @@ onMounted(() => {
 
         <div class="form-field">
           <label>Live2D 模型</label>
-          <select v-model="formData.modelPath">
+          <select v-if="!isCustomPath" v-model="formData.modelPath">
             <option value="">
               选择模型
             </option>
@@ -193,6 +232,25 @@ onMounted(() => {
               {{ model.name }}
             </option>
           </select>
+          
+          <div v-if="isCustomPath" class="custom-path-input">
+            <input
+              v-model="customModelPath"
+              type="text"
+              placeholder="输入模型文件路径或URL，如: https://example.com/model.model3.json"
+            >
+            <button 
+              type="button" 
+              class="back-to-presets-btn" 
+              @click="isCustomPath = false; formData.modelPath = '06-v2.1024/06-v2.model3.json'"
+            >
+              返回预设
+            </button>
+          </div>
+          
+          <div v-if="formData.modelPath" class="model-path-display">
+            <small>当前模型路径: {{ formData.modelPath }}</small>
+          </div>
         </div>
 
         <div class="form-field">
@@ -445,5 +503,41 @@ onMounted(() => {
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+.custom-path-input {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.custom-path-input input {
+  flex: 1;
+}
+
+.back-to-presets-btn {
+  padding: 10px 16px;
+  background: #f0f0f0;
+  color: #666;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: background-color 0.2s ease;
+}
+
+.back-to-presets-btn:hover {
+  background: #e0e0e0;
+}
+
+.model-path-display {
+  margin-top: 4px;
+}
+
+.model-path-display small {
+  color: #666;
+  font-size: 12px;
+  word-break: break-all;
 }
 </style>

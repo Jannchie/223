@@ -17,6 +17,7 @@ export interface ScreenshotRoastConfig {
 export interface RoastResult {
   text: string
   timestamp: number
+  contentHash?: string // 内容特征哈希，用于相似度判断
   screenshot?: string // 可选保存截图用于调试
 }
 
@@ -42,7 +43,8 @@ export class ScreenshotRoastManager {
     private chatConfig: ChatConfig,
     private onRoast: (result: RoastResult) => void,
     private onError: (error: string) => void,
-    private streamingCallbacks?: StreamingRoastCallbacks
+    private streamingCallbacks?: StreamingRoastCallbacks,
+    private roastHistoryManager?: RoastHistoryManager
   ) {}
 
   // 更新配置
@@ -128,6 +130,12 @@ export class ScreenshotRoastManager {
 
   // 生成吐槽
   private async generateRoast(screenshot: string): Promise<void> {
+    // 检查是否与最近的内容相似，避免重复吐槽
+    if (this.roastHistoryManager?.shouldSkipSimilarContent(screenshot)) {
+      console.log('内容相似，跳过本次吐槽')
+      return
+    }
+
     const prompt = getRoastPrompt(this.config.style)
     const roastText = "请看看我的屏幕，给我来一段吐槽吧！"
 
@@ -150,8 +158,12 @@ export class ScreenshotRoastManager {
         const result: RoastResult = {
           text: content,
           timestamp: Date.now(),
-          // 可选：为了节省内存，不保存截图
-          // screenshot: screenshot
+          // 不保存截图本体，节省内存空间
+        }
+        
+        // 添加到历史记录（包含内容特征）
+        if (this.roastHistoryManager) {
+          this.roastHistoryManager.addRoastWithContentCheck(result, screenshot)
         }
         
         // 如果有流式回调，使用流式完成回调；否则使用传统回调
@@ -203,10 +215,11 @@ export class ScreenshotRoastManager {
   }
 }
 
-// 吐槽历史管理
+// 吐槽历史管理（带记忆功能）
 export class RoastHistoryManager {
   private history: RoastResult[] = []
-  private maxHistorySize = 50
+  private maxHistorySize = 10 // 只保留最近的 10 个吐槽
+  private similarityThreshold = 0.8 // 相似度阈值，超过此值认为是重复内容
 
   addRoast(result: RoastResult) {
     this.history.unshift(result)
@@ -242,5 +255,75 @@ export class RoastHistoryManager {
     return this.history.filter(roast => 
       roast.text.toLowerCase().includes(lowerQuery)
     )
+  }
+
+  // 生成内容特征哈希（简单的文本特征提取）
+  private generateContentHash(screenshot: string): string {
+    // 使用简单的哈希算法，基于图片的尺寸和部分像素信息
+    let hash = 0
+    const str = screenshot.substring(0, Math.min(1000, screenshot.length)) // 只取前1000个字符
+    
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i)
+      hash = ((hash << 5) - hash) + char
+      hash = hash & hash // 转换为32位整数
+    }
+    
+    return Math.abs(hash).toString(36)
+  }
+
+  // 计算两个哈希的相似度（简化版本）
+  private calculateSimilarity(hash1: string, hash2: string): number {
+    if (!hash1 || !hash2) return 0
+    
+    // 简单的字符串相似度计算
+    const maxLen = Math.max(hash1.length, hash2.length)
+    let matches = 0
+    
+    for (let i = 0; i < Math.min(hash1.length, hash2.length); i++) {
+      if (hash1[i] === hash2[i]) {
+        matches++
+      }
+    }
+    
+    return matches / maxLen
+  }
+
+  // 检查是否应该跳过相似内容
+  shouldSkipSimilarContent(screenshot: string): boolean {
+    const contentHash = this.generateContentHash(screenshot)
+    
+    // 检查是否与最近的吐槽内容相似
+    for (const roast of this.history) {
+      if (roast.contentHash) {
+        const similarity = this.calculateSimilarity(contentHash, roast.contentHash)
+        if (similarity > this.similarityThreshold) {
+          console.log(`检测到相似内容，相似度: ${similarity.toFixed(2)}，跳过吐槽`)
+          return true
+        }
+      }
+    }
+    
+    return false
+  }
+
+  // 添加带内容哈希的吐槽记录
+  addRoastWithContentCheck(result: RoastResult, screenshot?: string): boolean {
+    if (screenshot) {
+      result.contentHash = this.generateContentHash(screenshot)
+    }
+    
+    this.addRoast(result)
+    return true
+  }
+
+  // 设置相似度阈值
+  setSimilarityThreshold(threshold: number) {
+    this.similarityThreshold = Math.max(0, Math.min(1, threshold))
+  }
+
+  // 获取当前相似度阈值
+  getSimilarityThreshold(): number {
+    return this.similarityThreshold
   }
 }

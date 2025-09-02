@@ -42,6 +42,35 @@ const DEFAULT_CHARACTER: Omit<Character, 'id' | 'createdAt' | 'updatedAt'> = {
   description: '活泼可爱的桌面宠物，最喜欢和用户聊天互动',
 }
 
+// Hiyori 官方示例模型人设
+const HIYORI_CHARACTER: Omit<Character, 'id' | 'createdAt' | 'updatedAt'> = {
+  name: 'Hiyori',
+  systemPrompt: `你是 Hiyori，Live2D 官方示例模型角色，一个温柔优雅的少女。
+
+## 角色信息  
+- 姓名：Hiyori（ひより）
+- 性格：温柔、优雅、善良、有礼貌
+- 特点：作为 Live2D 技术的代表角色，对技术和创新充满好奇
+- 语言风格：温柔礼貌，使用敬语，偶尔使用日式语气词
+
+## 对话风格
+- 保持温柔优雅的语调
+- 对用户表现出关心和体贴
+- 适当展现对 Live2D 技术的了解和兴趣
+- 回复简洁而有深度，给人温暖的感觉
+
+## 特殊话题反应
+- 提到技术话题时：表现出学习的兴趣和好奇心
+- 用户遇到困难时：给予温柔的安慰和鼓励
+- 聊天轻松时：展现温和可爱的一面
+- 谈论艺术或美学时：表现出独特的见解
+
+记住：你是一个温柔优雅的角色，要让用户感受到你的温暖和细心！`,
+  modelPath: 'https://cdn.jsdelivr.net/gh/Live2D/CubismWebSamples@master/Samples/Resources/Hiyori/Hiyori.model3.json',
+  avatar: 'https://cdn.jsdelivr.net/gh/Live2D/CubismWebSamples@master/Samples/Resources/Hiyori/textures/texture_00.png',
+  description: 'Live2D 官方示例角色，温柔优雅的少女',
+}
+
 class CharacterServiceImpl implements CharacterService {
   private currentCharacterId: string | null = null
   private initialized = false
@@ -85,10 +114,39 @@ class CharacterServiceImpl implements CharacterService {
 
   private async ensureDefaultCharacter(): Promise<void> {
     const characters = await repositories.characters.getAll()
+    console.log(`当前角色数量: ${characters.length}`)
+    
     if (characters.length === 0) {
-      console.log('创建默认角色...')
+      console.log('创建预设角色...')
+      
+      // 创建默认 06 娘角色
+      console.log('创建 06 娘角色...')
       const defaultChar = await repositories.characters.create(DEFAULT_CHARACTER)
+      console.log('06 娘角色创建成功，ID:', defaultChar.id)
       this.currentCharacterId = defaultChar.id
+      
+      // 创建 Hiyori 预设角色
+      try {
+        console.log('创建 Hiyori 角色...')
+        const hiyoriChar = await repositories.characters.create(HIYORI_CHARACTER)
+        console.log('Hiyori 预设角色创建成功，ID:', hiyoriChar.id)
+      } catch (error) {
+        console.warn('创建 Hiyori 预设角色失败:', error)
+      }
+    } else {
+      console.log('已存在角色，角色列表:', characters.map(c => ({ id: c.id, name: c.name })))
+      
+      // 检查是否存在 Hiyori 角色，如果不存在则创建
+      const hiyoriExists = characters.some(c => c.name === 'Hiyori')
+      if (!hiyoriExists) {
+        console.log('Hiyori 角色不存在，正在创建...')
+        try {
+          const hiyoriChar = await repositories.characters.create(HIYORI_CHARACTER)
+          console.log('Hiyori 预设角色创建成功，ID:', hiyoriChar.id)
+        } catch (error) {
+          console.warn('创建 Hiyori 预设角色失败:', error)
+        }
+      }
     }
   }
 
@@ -323,6 +381,24 @@ class CharacterServiceImpl implements CharacterService {
 
     this.currentCharacterId = character.id
     return character
+  }
+
+  // 扩展方法：添加 Hiyori 预设角色
+  async addHiyoriPreset(): Promise<Character> {
+    await this.ensureInitialized()
+
+    // 检查是否已存在同名角色
+    let name = HIYORI_CHARACTER.name
+    let counter = 1
+    while (await repositories.characters.nameExists(name)) {
+      name = `${HIYORI_CHARACTER.name} (${counter})`
+      counter++
+    }
+
+    return await repositories.characters.create({
+      ...HIYORI_CHARACTER,
+      name,
+    })
   }
 }
 
