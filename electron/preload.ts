@@ -60,6 +60,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('hotkey-screenshot-roast')
   },
 
+  // 语音识别快捷键事件
+  onHotkeyVoiceRecognition: (callback: () => void) => {
+    ipcRenderer.on('hotkey-voice-recognition', callback)
+  },
+  
+  removeVoiceRecognitionListener: () => {
+    ipcRenderer.removeAllListeners('hotkey-voice-recognition')
+  },
+
   // 录制窗口相关 API
   openRecordingWindow: () => ipcRenderer.invoke('open-recording-window'),
   

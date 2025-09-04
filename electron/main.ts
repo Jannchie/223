@@ -4,7 +4,7 @@ import http from 'node:http'
 import path from 'node:path'
 // import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, protocol, screen, Tray } from 'electron'
+import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, protocol, screen, session, Tray } from 'electron'
 
 // const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -59,6 +59,12 @@ app.commandLine.appendSwitch('--disable-backgrounding-occluded-windows')
 // 减少 GPU stall
 app.commandLine.appendSwitch('--max-gum-fps=30')
 
+// 媒体设备权限配置
+app.commandLine.appendSwitch('--enable-media-stream')
+app.commandLine.appendSwitch('--use-fake-ui-for-media-stream') // 自动授权媒体权限
+app.commandLine.appendSwitch('--disable-features=VizDisplayCompositor') // 有助于媒体流
+app.commandLine.appendSwitch('--autoplay-policy=no-user-gesture-required') // 允许自动播放
+
 async function createWindow() {
   // 先启动静态文件服务器
   try {
@@ -86,6 +92,9 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,
       contextIsolation: true,
+      webSecurity: false, // 允许跨域资源，对语音识别有帮助
+      allowRunningInsecureContent: true, // 允许不安全内容，有助于本地功能
+      experimentalFeatures: true, // 启用实验性功能
     },
   })
 
@@ -448,6 +457,38 @@ app.on('activate', () => {
 
 // eslint-disable-next-line unicorn/prefer-top-level-await
 app.whenReady().then(() => {
+  // 处理麦克风权限
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    console.log('权限请求:', permission)
+    if (permission === 'microphone' || permission === 'media') {
+      callback(true)
+    }
+    else if (permission === 'camera') {
+      // 如果将来需要摄像头权限
+      callback(false)
+    }
+    else {
+      callback(false)
+    }
+  })
+
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+    console.log('权限检查:', permission, 'Origin:', requestingOrigin)
+    if (permission === 'microphone' || permission === 'media') {
+      return true
+    }
+    return false
+  })
+
+  // 设置媒体设备权限
+  session.defaultSession.setDevicePermissionHandler((details) => {
+    console.log('设备权限请求:', details)
+    if (details.deviceType === 'microphone') {
+      return true
+    }
+    return false
+  })
+
   // 注册自定义协议来处理本地文件
   protocol.handle('app', (request) => {
     const url = request.url.slice('app://'.length)
@@ -621,7 +662,7 @@ function setupIpcHandlers() {
 function registerGlobalShortcuts() {
   try {
     // 注册 F7 快捷键触发截图吐槽
-    const ret = globalShortcut.register('F7', async () => {
+    const ret1 = globalShortcut.register('F7', async () => {
       if (win && !win.isDestroyed()) {
         // 触发截图吐槽
         const screenshot = await captureScreenshot()
@@ -631,11 +672,26 @@ function registerGlobalShortcuts() {
       }
     })
 
-    if (ret) {
+    if (ret1) {
       console.log('F7 快捷键注册成功')
     }
     else {
       console.log('F7 快捷键注册失败')
+    }
+
+    // 注册 F6 快捷键触发语音识别
+    const ret2 = globalShortcut.register('F6', () => {
+      if (win && !win.isDestroyed()) {
+        // 触发语音识别
+        win.webContents.send('hotkey-voice-recognition')
+      }
+    })
+
+    if (ret2) {
+      console.log('F6 快捷键注册成功')
+    }
+    else {
+      console.log('F6 快捷键注册失败')
     }
   }
   catch (error) {

@@ -15,6 +15,51 @@ import { RoastHistoryManager, ScreenshotRoastManager } from '../utils/screenshot
 import CharacterEditor from './CharacterEditor.vue'
 import CharacterSelector from './CharacterSelector.vue'
 
+// 语音识别类型定义
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognition
+    webkitSpeechRecognition: new () => SpeechRecognition
+  }
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  maxAlternatives: number
+  start: () => void
+  stop: () => void
+  abort: () => void
+  onstart: ((event: Event) => void) | null
+  onresult: ((event: SpeechRecognitionEvent) => void) | null
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null
+  onend: ((event: Event) => void) | null
+}
+
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string
+}
+
+interface SpeechRecognitionResultList {
+  length: number
+  [index: number]: SpeechRecognitionResult
+}
+
+interface SpeechRecognitionResult {
+  length: number
+  [index: number]: SpeechRecognitionAlternative
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string
+  confidence: number
+}
+
 // 输入框相关状态
 const inputText = ref('')
 const inputPositionY = ref(0)
@@ -32,6 +77,16 @@ const bubblePositionY = ref(0)
 
 // 说话动画相关状态
 const speakingTimer = ref<NodeJS.Timeout | null>(null)
+
+// 语音识别相关状态
+const isListening = ref(false)
+const recognition = ref<SpeechRecognition | null>(null)
+const voiceRecognitionAvailable = ref(false)
+const mediaRecorder = ref<MediaRecorder | null>(null)
+const audioChunks = ref<Blob[]>([])
+const audioStream = ref<MediaStream | null>(null)
+const lastF6PressTime = ref<number>(0)
+const isRecording = ref(false)
 
 // 聊天功能集成
 const {
@@ -375,6 +430,229 @@ async function sendMessage() {
   }
 }
 
+// 测试麦克风权限
+async function testMicrophonePermission() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    console.log('麦克风权限测试成功')
+    for (const track of stream.getTracks()) track.stop() // 停止流
+    return true
+  }
+  catch (error) {
+    console.error('麦克风权限测试失败:', error)
+    return false
+  }
+}
+
+// 初始化音频录制
+function initializeAudioRecording() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    console.warn('当前浏览器不支持音频录制功能')
+    voiceRecognitionAvailable.value = false
+    return
+  }
+
+  voiceRecognitionAvailable.value = true
+  console.log('音频录制功能已初始化')
+}
+
+// 开始音频录制
+async function startAudioRecording() {
+  try {
+    // 获取麦克风流
+    audioStream.value = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: 16_000, // 16kHz采样率，适合语音识别
+        channelCount: 1, // 单声道
+        echoCancellation: true,
+        noiseSuppression: true,
+      },
+    })
+
+    // 重置音频块
+    audioChunks.value = []
+
+    // 创建MediaRecorder
+    mediaRecorder.value = new MediaRecorder(audioStream.value, {
+      mimeType: 'audio/webm;codecs=opus', // 使用opus编码，压缩率好
+    })
+
+    mediaRecorder.value.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        audioChunks.value.push(event.data)
+      }
+    }
+
+    mediaRecorder.value.onstop = async () => {
+      // 录制结束后处理音频
+      const audioBlob = new Blob(audioChunks.value, { type: 'audio/webm;codecs=opus' })
+      const base64Audio = await blobToBase64(audioBlob)
+
+      console.log('音频录制完成，长度:', audioBlob.size, 'bytes')
+
+      // 发送音频给AI
+      await sendAudioToAI(base64Audio)
+    }
+
+    // 开始录制
+    mediaRecorder.value.start()
+    isListening.value = true
+    isRecording.value = true
+  }
+  catch (error) {
+    console.error('开始音频录制失败:', error)
+    isListening.value = false
+    isRecording.value = false
+  }
+}
+
+// 停止音频录制
+function stopAudioRecording() {
+  if (mediaRecorder.value && mediaRecorder.value.state !== 'inactive') {
+    mediaRecorder.value.stop()
+  }
+
+  if (audioStream.value) {
+    for (const track of audioStream.value.getTracks()) track.stop()
+    audioStream.value = null
+  }
+
+  isListening.value = false
+  isRecording.value = false
+}
+
+// 将Blob转换为base64
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const result = reader.result as string
+      // 移除data:audio/webm;codecs=opus;base64,前缀，只保留base64数据
+      const base64 = result.split(',')[1]
+      resolve(base64)
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+}
+
+// 发送音频给AI进行处理
+async function sendAudioToAI(base64Audio: string) {
+  if (!apiKey.value) {
+    showTemporaryBubble('请先配置 API Key')
+    return
+  }
+
+  try {
+    // 直接传递base64音频数据进行转录和聊天
+    await sendAudioMessage(base64Audio)
+  }
+  catch (error) {
+    console.error('发送音频给AI失败:', error)
+  }
+}
+
+// 发送音频消息（先转录为文本，再发送给AI）
+async function sendAudioMessage(base64Audio: string) {
+  try {
+    // 动态导入 OpenAI 客户端
+    const { OpenAI } = await import('openai')
+
+    // 创建 OpenAI 客户端用于音频转录
+    const openai = new OpenAI({
+      apiKey: apiKey.value,
+      baseURL: baseURL.value.includes('openai.com') ? undefined : baseURL.value,
+      dangerouslyAllowBrowser: true, // 允许在浏览器中使用
+    })
+
+    // 将 base64 转换为 File 对象
+    const audioBlob = new Blob([Uint8Array.from(atob(base64Audio), c => c.charCodeAt(0))], {
+      type: 'audio/webm;codecs=opus',
+    })
+    const audioFile = new File([audioBlob], 'audio.webm', { type: 'audio/webm;codecs=opus' })
+
+    // 使用 Whisper 转录音频
+    const transcription = await openai.audio.transcriptions.create({
+      file: audioFile,
+      model: 'whisper-1',
+      language: 'zh', // 指定中文
+    })
+
+    const transcribedText = transcription.text
+    console.log('音频转录结果:', transcribedText)
+
+    if (!transcribedText || transcribedText.trim() === '') {
+      return
+    }
+
+    // 将转录的文本作为普通消息发送给 AI
+    inputText.value = transcribedText
+    
+    // 重置typing状态，然后发送消息
+    isTyping.value = false
+    await sendMessage() // 使用现有的文本聊天功能
+  }
+  catch (error) {
+    console.error('音频处理失败:', error)
+  }
+}
+
+// 检查网络连接
+async function checkNetworkConnection(): Promise<boolean> {
+  try {
+    // 尝试连接到一个总是可达的服务
+    const response = await fetch('https://www.google.com/generate_204', {
+      method: 'GET',
+      mode: 'no-cors',
+      cache: 'no-cache',
+    })
+    return true
+  }
+  catch {
+    return false
+  }
+}
+
+// 切换式语音录制（F6键控制开始/停止）
+async function startVoiceRecognition() {
+  const currentTime = Date.now()
+  
+  // 检查点击间隔，小于1秒则忽略
+  if (currentTime - lastF6PressTime.value < 1000) {
+    return
+  }
+  
+  lastF6PressTime.value = currentTime
+
+  if (!voiceRecognitionAvailable.value) {
+    return
+  }
+
+  if (isTyping.value) {
+    return
+  }
+
+  if (!apiKey.value) {
+    return
+  }
+
+  // 检查网络连接
+  const hasNetwork = await checkNetworkConnection()
+  if (!hasNetwork) {
+    return
+  }
+
+  // 切换录音状态
+  if (isRecording.value) {
+    // 当前正在录音，停止录音
+    stopAudioRecording()
+  }
+  else {
+    // 当前没有录音，开始录音
+    await startAudioRecording()
+  }
+}
+
 // 显示临时气泡
 function showTemporaryBubble(content: string, duration: number = 3000) {
   bubbleContent.value = content
@@ -625,7 +903,7 @@ function getCharacterTopPosition(): { x: number, y: number } {
         y: modelTop,
       }
     }
-    
+
     // 最终回退位置：canvas中心顶部
     return {
       x: canvasX.value + (canvasWidth.value * canvasScale.value) / 2,
@@ -1043,39 +1321,39 @@ async function loadCurrentCharacter() {
   try {
     // 优先加载上次选择的角色
     let targetCharacter: Character | null = null
-    
+
     if (lastSelectedCharacterId.value) {
       console.log('尝试加载上次选择的角色:', lastSelectedCharacterId.value)
       // 确保ID类型匹配：先尝试字符串，再尝试数字
       targetCharacter = await characterService.getCharacter(lastSelectedCharacterId.value)
-      
+
       if (!targetCharacter && !isNaN(Number(lastSelectedCharacterId.value))) {
         // 如果字符串查找失败，尝试数字查找
         console.log('尝试数字ID查找:', Number(lastSelectedCharacterId.value))
         targetCharacter = await characterService.getCharacter(Number(lastSelectedCharacterId.value) as any)
       }
-      
+
       if (!targetCharacter) {
         console.log('上次选择的角色不存在，重置选择')
         lastSelectedCharacterId.value = null
         lastUsedModelPath.value = null
       }
     }
-    
+
     // 如果没有上次选择的角色，使用角色服务的当前角色
     if (!targetCharacter) {
       targetCharacter = await characterService.getCurrentCharacterAsync()
     }
-    
+
     currentCharacter.value = targetCharacter
-    
+
     // 更新保存的选择
     if (targetCharacter) {
       lastSelectedCharacterId.value = targetCharacter.id.toString()
       if (targetCharacter.modelPath) {
         lastUsedModelPath.value = targetCharacter.modelPath
       }
-      
+
       console.log('当前角色:', targetCharacter.name, '模型路径:', targetCharacter.modelPath)
     }
   }
@@ -1128,7 +1406,8 @@ async function handleCharacterSave(character: Character) {
   // 如果保存的是当前角色或者是新创建的角色，切换到该角色
   if (!currentCharacter.value || character.id === currentCharacter.value.id || characterEditorMode.value === 'create') {
     await switchCharacter(character)
-  } else {
+  }
+  else {
     // 如果编辑的不是当前角色，但用户可能想切换到编辑的角色
     // 更新保存记录（如果用户之后手动选择这个角色，会记住新的设置）
     if (character.modelPath) {
@@ -1161,7 +1440,7 @@ async function switchCharacter(character: Character) {
     if (character.modelPath) {
       lastUsedModelPath.value = character.modelPath
     }
-    
+
     console.log('保存角色选择:', character.name, 'ID:', character.id.toString())
 
     // 重新加载 Live2D 模型
@@ -1203,13 +1482,13 @@ async function loadLive2DModel(modelPath: string) {
 
     console.log('Model loaded successfully')
     model.setRenderer(app.renderer)
-    
+
     // 确保模型背景透明
     if (model.internalModel && model.internalModel.renderer) {
       // 设置 Live2D 模型渲染器的透明度
       model.internalModel.renderer.setMvpMatrix(model.internalModel.renderer._mvpMatrix)
     }
-    
+
     app.stage.addChild(model)
 
     // 设置模型显示
@@ -1461,7 +1740,7 @@ onMounted(async () => {
   try {
     await characterService.initialize()
     await loadCurrentCharacter()
-    
+
     // 角色加载完成后初始化聊天服务（这样欢迎消息会显示正确的角色名）
     initializeChatService()
   }
@@ -1532,7 +1811,7 @@ onMounted(async () => {
     height: initialHeight,
     view: canvas,
     backgroundAlpha: 0,
-    backgroundColor: 0x000000, // 设置透明背景色
+    backgroundColor: 0x00_00_00, // 设置透明背景色
     clearBeforeRender: false, // 不清除背景
     powerPreference: 'high-performance', // 使用高性能 GPU
     antialias: false, // 关闭抗锯齿以提升性能
@@ -1614,6 +1893,26 @@ onMounted(async () => {
     })
   }
 
+  // 测试麦克风权限
+  testMicrophonePermission().then((hasPermission) => {
+    if (hasPermission) {
+      console.log('麦克风权限已获得，初始化音频录制')
+      // 初始化音频录制
+      initializeAudioRecording()
+    }
+    else {
+      console.warn('麦克风权限未获得，音频录制功能不可用')
+      voiceRecognitionAvailable.value = false
+    }
+  })
+
+  // 监听F1快捷键事件
+  if (globalThis.electronAPI?.onHotkeyVoiceRecognition) {
+    globalThis.electronAPI.onHotkeyVoiceRecognition(() => {
+      startVoiceRecognition()
+    })
+  }
+
   // 启动定期目光锁定计时器
   startGazeAtUserTimer()
 })
@@ -1627,6 +1926,16 @@ onUnmounted(() => {
   // 清理截图监听器
   if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.removeScreenshotListeners) {
     (globalThis as any).electronAPI.removeScreenshotListeners()
+  }
+
+  // 清理语音识别监听器
+  if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.removeVoiceRecognitionListener) {
+    (globalThis as any).electronAPI.removeVoiceRecognitionListener()
+  }
+
+  // 停止音频录制
+  if (isListening.value) {
+    stopAudioRecording()
   }
 
   // 清理截图吐槽管理器
@@ -1726,6 +2035,26 @@ onUnmounted(() => {
         {{ bubbleContent }}
       </div>
       <div class="bubble-arrow" />
+    </div>
+
+    <!-- 语音识别状态指示器 -->
+    <div
+      v-if="isListening"
+      class="voice-listening-indicator"
+      :style="{
+        left: `${bubblePositionX}px`,
+        top: `${bubblePositionY - 60}px`,
+        transform: `translate(-50%, -100%) scale(${canvasScale})`,
+      }"
+    >
+      <div class="listening-animation">
+        <div class="wave" />
+        <div class="wave" />
+        <div class="wave" />
+      </div>
+      <div class="listening-text">
+        正在听...
+      </div>
     </div>
 
     <!-- 吐槽气泡 -->
@@ -2386,6 +2715,68 @@ onUnmounted(() => {
     transform: translate(-50%, -100%) scale(0.8);
   }
   100% {
+    transform: translate(-50%, -100%) scale(1);
+  }
+}
+
+/* 语音识别状态指示器样式 */
+.voice-listening-indicator {
+  position: absolute;
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(75, 85, 99, 0.9);
+  color: white;
+  border-radius: 20px;
+  font-size: 14px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+  animation: fadeInOut 0.3s ease-in-out;
+}
+
+.listening-animation {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.wave {
+  width: 3px;
+  height: 12px;
+  background: white;
+  border-radius: 2px;
+  animation: waveAnimation 1.4s ease-in-out infinite;
+}
+
+.wave:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.wave:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes waveAnimation {
+  0%, 40%, 100% {
+    transform: scaleY(0.4);
+  }
+  20% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes fadeInOut {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -100%) scale(0.9);
+  }
+  to {
+    opacity: 1;
     transform: translate(-50%, -100%) scale(1);
   }
 }
