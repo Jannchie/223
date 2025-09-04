@@ -88,6 +88,9 @@ const audioStream = ref<MediaStream | null>(null)
 const lastF6PressTime = ref<number>(0)
 const isRecording = ref(false)
 
+// Pin 状态 - 当pinned为true时，除了pin按钮外的所有交互都被禁用
+const isPinned = ref(false)
+
 // 聊天功能集成
 const {
   isTyping: chatIsTyping,
@@ -1104,12 +1107,25 @@ function updateCanvasProperties() {
 }
 
 // 检查鼠标是否在输入框或canvas区域
+// 检查鼠标是否在pin按钮区域内
+function isPointInPinButton(clientX: number, clientY: number): boolean {
+  const pinButton = document.querySelector('.pin-button') as HTMLElement
+  if (!pinButton) return false
+
+  const rect = pinButton.getBoundingClientRect()
+  return clientX >= rect.left && clientX <= rect.right 
+    && clientY >= rect.top && clientY <= rect.bottom
+}
+
 function checkMouseInInteractiveArea(clientX: number, clientY: number): boolean {
-  // 检查是否在canvas区域
+  // 如果处于pin状态，只有pin按钮区域是交互区域
+  if (isPinned.value) {
+    return isPointInPinButton(clientX, clientY)
+  }
+  
+  // 正常状态下的交互区域检查
   const inCanvas = isPointInCanvas(clientX, clientY)
-  // 检查是否在输入框区域
   const inInput = isPointInInput(clientX, clientY)
-  // 检查是否在设置面板区域
   const inSettings = isPointInSettings(clientX, clientY)
   return inCanvas || inInput || inSettings
 }
@@ -1162,6 +1178,11 @@ function isPointInCanvas(clientX: number, clientY: number): boolean {
 
 // 鼠标按下事件处理
 function handleMouseDown(event: MouseEvent) {
+  // 如果被pin住，不处理拖拽交互
+  if (isPinned.value) {
+    return
+  }
+
   // 如果点击在输入框区域内，不处理拖拽
   if (isPointInInput(event.clientX, event.clientY)) {
     return
@@ -1196,6 +1217,11 @@ function handleMouseLeave() {
 
 // 滚轮事件处理（以鼠标位置为中心缩放canvas）
 function handleWheel(event: WheelEvent) {
+  // 如果被pin住，不处理缩放交互
+  if (isPinned.value) {
+    return
+  }
+
   // 只有滚轮在canvas区域内才响应缩放
   if (isPointInCanvas(event.clientX, event.clientY)) {
     event.preventDefault()
@@ -1277,6 +1303,11 @@ function handleClick(event: MouseEvent) {
 
 // 右键菜单事件处理
 function handleContextMenu(event: MouseEvent) {
+  // 如果被pin住，不处理右键菜单交互
+  if (isPinned.value) {
+    return
+  }
+
   // 如果右键不在canvas区域内，不阻止事件，让桌面右键菜单正常显示
   if (!isPointInCanvas(event.clientX, event.clientY)) {
     return
@@ -1296,6 +1327,11 @@ function saveSettings() {
 // 取消设置
 function cancelSettings() {
   showSettings.value = false
+}
+
+// 切换Pin状态
+function togglePin() {
+  isPinned.value = !isPinned.value
 }
 
 // 获取模型文件路径（支持本地和远程URL）
@@ -2011,14 +2047,27 @@ onUnmounted(() => {
         @keydown="handleKeyDown"
         @select="handleInputCursorMove"
       >
-      <!-- 设置按钮 -->
-      <button
-        class="settings-button"
-        title="打开设置"
-        @click="showSettings = true"
-      >
-        <div class="i-carbon-settings text-18px" />
-      </button>
+      <!-- 按钮容器 -->
+      <div class="button-container">
+        <!-- Pin 按钮 -->
+        <button
+          class="pin-button"
+          :class="{ pinned: isPinned }"
+          :title="isPinned ? '取消固定' : '固定位置'"
+          @click="togglePin"
+        >
+          <div class="i-carbon-pin text-18px" />
+        </button>
+        
+        <!-- 设置按钮 -->
+        <button
+          class="settings-button"
+          title="打开设置"
+          @click="showSettings = true"
+        >
+          <div class="i-carbon-settings text-18px" />
+        </button>
+      </div>
     </div>
 
     <!-- 对话气泡 -->
@@ -2584,6 +2633,46 @@ onUnmounted(() => {
 .text-input:disabled {
   background: rgba(230, 230, 230, 0.9);
   cursor: not-allowed;
+}
+
+/* 按钮容器样式 */
+.button-container {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Pin 按钮样式 */
+.pin-button {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+}
+
+.pin-button:hover {
+  background: rgba(255, 255, 255, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: scale(1.05);
+}
+
+.pin-button.pinned {
+  background: rgba(255, 100, 100, 0.9);
+  color: white;
+}
+
+.pin-button.pinned:hover {
+  background: rgba(255, 100, 100, 1);
 }
 
 /* 设置按钮样式 */
