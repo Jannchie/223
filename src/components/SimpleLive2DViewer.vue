@@ -841,6 +841,11 @@ function calculateInputPosition() {
 
 // 目光追踪更新逻辑已由 useGaze 提供
 
+// 当缩放比例变化时，重新计算输入框位置
+watch(canvasScale, () => {
+  calculateInputPosition()
+})
+
 // 更新canvas属性和位置
 function updateCanvasProperties() {
   updateCanvasPropertiesFromComposable()
@@ -958,6 +963,8 @@ function handleWheel(event: WheelEvent) {
     event.stopPropagation()
 
     wheelZoomAt(event.clientX, event.clientY, event.deltaY)
+    // 缩放后重新计算输入框相对位置
+    calculateInputPosition()
   }
   // 在透明区域滚轮不阻止默认行为，让桌面程序正常响应滚轮
 }
