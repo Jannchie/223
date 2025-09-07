@@ -1,13 +1,15 @@
 <!-- eslint-disable no-console -->
 <script setup lang="ts">
+import type { Live2DModel } from '@jannchie/pixi-live2d-display'
 import type { Character } from '../types/chat'
 import type { RoastStyle } from '../utils/screenshot-prompts'
 import type { RoastResult, ScreenshotRoastConfig } from '../utils/screenshot-roast'
-import { Live2DModel } from '@jannchie/pixi-live2d-display'
 import { useLocalStorage } from '@vueuse/core'
-import { Application, Ticker } from 'pixi.js'
+import { Ticker } from 'pixi.js'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useChatCompatible } from '../composables/useChat'
+import { useGaze } from '../composables/useGaze'
+import { useLive2DCanvas } from '../composables/useLive2DCanvas'
 import { characterService } from '../services/character-service'
 import { chatService } from '../services/chat-service'
 import { getRoastPrompt } from '../utils/screenshot-prompts'
@@ -141,6 +143,22 @@ const roastHistory = ref<RoastResult[]>([])
 const showRoastBubble = ref(false)
 const roastBubbleContent = ref('')
 
+// 目光追踪与锁定（抽为 composable）需要在 watch 使用前初始化
+const {
+  gazeTargetX,
+  gazeTargetY,
+  gazeAtUserConfig,
+  isGazingAtUser,
+  setGazeTarget,
+  clearGazeTarget,
+  startGazeAtUser,
+  stopGazeAtUser,
+  startGazeAtUserTimer,
+  stopGazeAtUserTimer,
+  updateGazeAtUserConfig,
+  updateGazeParameters,
+} = useGaze()
+
 // 映射聊天状态到旧版本变量
 watch(chatIsTyping, (newValue) => {
   isTyping.value = newValue
@@ -181,58 +199,33 @@ const isInputVisible = ref(false)
 const mouseX = ref(0)
 const mouseY = ref(0)
 let model: Live2DModel | null = null
-const app = new Application()
-// 目光追踪相关状态
-const gazeTargetX = ref<number | null>(null)
-const gazeTargetY = ref<number | null>(null)
+const {
+  app,
+  model: modelRef,
+  initApp,
+  loadModelFromURL,
+  updateCanvasProperties: updateCanvasPropertiesFromComposable,
+  canvasX,
+  canvasY,
+  canvasWidth,
+  canvasHeight,
+  canvasScale,
+  minScale,
+  maxScale,
+  startDrag,
+  dragTo,
+  endDrag,
+  wheelZoomAt,
+} = useLive2DCanvas()
 
-// 定期目光锁定相关状态
-const gazeAtUserConfig = useLocalStorage('gaze-at-user-config', {
-  enabled: true, // 是否启用定期目光锁定
-  intervalMinutes: 1, // 基础间隔分钟数
-  lockDurationSeconds: 3, // 基础锁定持续时间（秒）
-  randomizeInterval: true, // 是否随机化间隔时间
-  randomizeDuration: true, // 是否随机化锁定时间
-  randomOffset: true, // 是否添加随机偏移（保留但暂时不用）
-})
-const gazeAtUserTimer = ref<NodeJS.Timeout | null>(null)
-const isGazingAtUser = ref(false)
+// 记录上次目标值的逻辑已移入 useGaze
 
-// 记录上次的目标值，用于检测变化
-const lastTargetX = ref(0)
-const lastTargetY = ref(0)
-const lastGazeSourceType = ref('')
-
-// 拖拽和缩放状态
-const isDragging = ref(false)
-const dragStartX = ref(0)
-const dragStartY = ref(0)
-const canvasStartX = ref(0)
-const canvasStartY = ref(0)
-const canvasScale = useLocalStorage('live2d-canvas-scale', 1)
-const minScale = 0.1
-const maxScale = 3
-
-// canvas位置和尺寸 - 使用localStorage保存
-const canvasX = useLocalStorage('live2d-canvas-x', 0)
-const canvasY = useLocalStorage('live2d-canvas-y', 0)
-const canvasWidth = useLocalStorage('live2d-canvas-width', 800)
-const canvasHeight = useLocalStorage('live2d-canvas-height', 1200)
+// 拖拽、缩放、画布位置/尺寸由 useLive2DCanvas 管理
 
 // 存储模型的基础缩放比例
 let baseModelScale = 1
 
-// 设置目光追踪目标的钩子函数
-function setGazeTarget(x: number, y: number) {
-  gazeTargetX.value = x
-  gazeTargetY.value = y
-}
-
-// 清除目光追踪目标，回到鼠标追踪模式
-function clearGazeTarget() {
-  gazeTargetX.value = null
-  gazeTargetY.value = null
-}
+// setGazeTarget / clearGazeTarget 由 useGaze 提供
 
 // 计算输入框光标的屏幕坐标位置
 function calculateCursorPosition(inputElement: HTMLInputElement) {
@@ -590,7 +583,7 @@ async function sendAudioMessage(base64Audio: string) {
 
     // 将转录的文本作为普通消息发送给 AI
     inputText.value = transcribedText
-    
+
     // 重置typing状态，然后发送消息
     isTyping.value = false
     await sendMessage() // 使用现有的文本聊天功能
@@ -619,12 +612,12 @@ async function checkNetworkConnection(): Promise<boolean> {
 // 切换式语音录制（F6键控制开始/停止）
 async function startVoiceRecognition() {
   const currentTime = Date.now()
-  
+
   // 检查点击间隔，小于1秒则忽略
   if (currentTime - lastF6PressTime.value < 1000) {
     return
   }
-  
+
   lastF6PressTime.value = currentTime
 
   if (!voiceRecognitionAvailable.value) {
@@ -748,114 +741,11 @@ function getRandomizedDuration(): number {
   return Math.round(baseDurationMs * randomFactor)
 }
 
-// 开始目光锁定用户
-function startGazeAtUser() {
-  if (!gazeAtUserConfig.value.enabled || isGazingAtUser.value || !model) {
-    return
-  }
+// startGazeAtUser / stopGazeAtUser 由 useGaze 提供
 
-  try {
-    const modelWithEyesLock = model as any
+// 定时器逻辑移入 useGaze
 
-    // 检查模型是否支持眼睛锁定功能
-    if (modelWithEyesLock.setEyesAlwaysLookAtCamera) {
-      isGazingAtUser.value = true
-
-      // 启用眼睛锁定到摄像头
-      modelWithEyesLock.setEyesAlwaysLookAtCamera(true)
-
-      // 在随机化的时间后停止锁定
-      const lockDuration = getRandomizedDuration()
-      setTimeout(() => {
-        stopGazeAtUser()
-      }, lockDuration)
-    }
-    else {
-      console.warn('此Live2D模型不支持眼睛锁定功能')
-    }
-  }
-  catch (error) {
-    console.error('启动目光锁定失败:', error)
-    isGazingAtUser.value = false
-  }
-}
-
-// 停止目光锁定用户
-function stopGazeAtUser() {
-  if (!isGazingAtUser.value || !model) {
-    return
-  }
-
-  try {
-    const modelWithEyesLock = model as any
-
-    // 检查并禁用眼睛锁定
-    if (modelWithEyesLock.setEyesAlwaysLookAtCamera
-        && modelWithEyesLock.isEyesAlwaysLookAtCamera
-        && modelWithEyesLock.isEyesAlwaysLookAtCamera()) {
-      modelWithEyesLock.setEyesAlwaysLookAtCamera(false)
-    }
-
-    isGazingAtUser.value = false
-  }
-  catch (error) {
-    console.error('停止目光锁定失败:', error)
-    isGazingAtUser.value = false
-  }
-}
-
-// 启动定期目光锁定计时器
-function startGazeAtUserTimer() {
-  if (!gazeAtUserConfig.value.enabled) {
-    return
-  }
-
-  stopGazeAtUserTimer() // 先清除已有的计时器
-
-  // 使用递归setTimeout而不是setInterval，以便每次都能重新计算随机间隔
-  scheduleNextGaze()
-}
-
-// 安排下一次目光锁定
-function scheduleNextGaze() {
-  if (!gazeAtUserConfig.value.enabled) {
-    return
-  }
-
-  const intervalMs = getRandomizedInterval()
-
-  gazeAtUserTimer.value = setTimeout(() => {
-    // 只有在没有其他交互时才执行定期锁定
-    if (!isInputFocused.value && !showSettings.value && !isTyping.value) {
-      startGazeAtUser()
-    }
-
-    // 安排下一次锁定（递归调用）
-    scheduleNextGaze()
-  }, intervalMs)
-}
-
-// 停止定期目光锁定计时器
-function stopGazeAtUserTimer() {
-  if (gazeAtUserTimer.value) {
-    clearTimeout(gazeAtUserTimer.value)
-    gazeAtUserTimer.value = null
-  }
-  stopGazeAtUser() // 同时停止当前的锁定
-}
-
-// 更新目光锁定配置
-function updateGazeAtUserConfig(newConfig: Partial<typeof gazeAtUserConfig.value>) {
-  gazeAtUserConfig.value = { ...gazeAtUserConfig.value, ...newConfig }
-
-  // 重新启动计时器以应用新配置
-  if (gazeAtUserConfig.value.enabled) {
-    startGazeAtUserTimer()
-  }
-  else {
-    stopGazeAtUserTimer()
-  }
-}
+// 更新目光锁定配置由 useGaze 提供
 
 // 将钩子函数暴露到全局
 if (typeof globalThis !== 'undefined') {
@@ -924,6 +814,29 @@ function updateBubblePosition() {
   bubblePositionY.value = characterTop.y
 }
 
+// 监听目光设置变化，动态启停定时器（确保在 useGaze 初始化之后）
+watch(() => gazeAtUserConfig.value.enabled, (enabled) => {
+  if (enabled) {
+    startGazeAtUserTimer(
+      () => isInputFocused.value || showSettings.value || isTyping.value,
+      () => model,
+    )
+  }
+  else {
+    stopGazeAtUserTimer()
+  }
+})
+
+// 当间隔或时长参数变化时，若启用则重启计时器，以应用新配置
+watch(gazeAtUserConfig, () => {
+  if (gazeAtUserConfig.value.enabled) {
+    startGazeAtUserTimer(
+      () => isInputFocused.value || showSettings.value || isTyping.value,
+      () => model,
+    )
+  }
+}, { deep: true })
+
 // 计算输入框基于模型的位置
 function calculateInputPosition() {
   if (!model || !app) {
@@ -951,158 +864,13 @@ function calculateInputPosition() {
   }
 }
 
-// 计算目光追踪的目标位置
-function updateGazeParameters() {
-  if (!model) {
-    return
-  }
-
-  // 如果正在使用Live2D内置眼睛锁定功能，跳过常规目光追踪
-  if (isGazingAtUser.value) {
-    return
-  }
-
-  let targetScreenX = 0
-  let targetScreenY = 0
-  let sourceType = ''
-
-  // 如果设置了目标坐标，使用目标坐标；否则使用鼠标坐标
-  if (gazeTargetX.value !== null && gazeTargetY.value !== null) {
-    targetScreenX = gazeTargetX.value
-    targetScreenY = gazeTargetY.value
-    sourceType = isInputFocused.value ? '光标' : 'Electron鼠标'
-  }
-  else {
-    // 使用鼠标位置（本地鼠标追踪）
-    targetScreenX = mouseX.value
-    targetScreenY = mouseY.value
-    sourceType = '本地鼠标'
-  }
-
-  // 检查目标位置是否有变化
-  const threshold = 2 // 屏幕像素阈值，减少抖动
-  const hasChanged = (
-    Math.abs(targetScreenX - lastTargetX.value) > threshold
-    || Math.abs(targetScreenY - lastTargetY.value) > threshold
-    || sourceType !== lastGazeSourceType.value
-  )
-
-  // 只在有变化时才更新
-  if (hasChanged) {
-    // 尝试从 Live2D 模型中获取眼睛坐标
-    let eyeScreenX = canvasX.value + (canvasWidth.value * canvasScale.value) / 2 // 默认位置
-    let eyeScreenY = canvasY.value + (canvasHeight.value * canvasScale.value) * 0.35 // 默认位置
-
-    try {
-      const internalModel = model.internalModel as any
-
-      // 方法1：尝试获取眼睛相关的 drawable
-      if (internalModel.coreModel && internalModel.coreModel.getDrawableCount) {
-        const drawableCount = internalModel.coreModel.getDrawableCount()
-        for (let i = 0; i < drawableCount; i++) {
-          try {
-            const drawableId = internalModel.coreModel.getDrawableId(i)
-            // 寻找眼睛相关的drawable（常见命名包含eye、Eye、目等）
-            if (drawableId && (drawableId.includes('Eye') || drawableId.includes('eye') || drawableId.includes('目')) // 尝试获取drawable的位置信息
-              && internalModel.coreModel.getDrawableVertexPositions) {
-              const vertices = internalModel.coreModel.getDrawableVertexPositions(i)
-              if (vertices && vertices.length >= 2) {
-                // 计算drawable的中心点（取顶点的平均值）
-                let centerX = 0
-                let centerY = 0
-                const vertexCount = vertices.length / 2
-                for (let j = 0; j < vertices.length; j += 2) {
-                  centerX += vertices[j]
-                  centerY += vertices[j + 1]
-                }
-                centerX /= vertexCount
-                centerY /= vertexCount
-
-                // 转换为屏幕坐标
-                const worldPos = model.toGlobal({ x: centerX, y: centerY })
-                eyeScreenX = worldPos.x
-                eyeScreenY = worldPos.y
-                break // 找到第一个眼睛就使用它
-              }
-            }
-          }
-          catch {
-            // 忽略单个drawable的错误，继续搜索
-          }
-        }
-      }
-    }
-    catch (error) {
-      console.log('获取眼睛坐标时出错:', error)
-      // 使用默认估算位置
-    }
-
-    // 计算从眼睛到目标位置的方向向量
-    const directionX = targetScreenX - eyeScreenX
-    const directionY = targetScreenY - eyeScreenY
-
-    // 计算方向向量的长度
-    const directionLength = Math.hypot(directionX, directionY)
-
-    // 避免除零错误
-    if (directionLength === 0) {
-      return
-    }
-
-    // 归一化方向向量
-    const normalizedX = directionX / directionLength
-    const normalizedY = directionY / directionLength
-
-    // 从眼睛位置沿着方向延伸1000px
-    const projectionDistance = 10_000
-    const projectionScreenX = eyeScreenX + normalizedX * projectionDistance
-    const projectionScreenY = eyeScreenY + normalizedY * projectionDistance
-
-    // 转换投影点为相对于 canvas 的坐标
-    const projectionCanvasX = projectionScreenX - canvasX.value
-    const projectionCanvasY = projectionScreenY - canvasY.value
-
-    // 转换为模型坐标（Live2D 期望的世界坐标）
-    const modelX = projectionCanvasX / canvasScale.value
-    const modelY = projectionCanvasY / canvasScale.value
-
-    // 使用 Live2D 内置的 focus 方法
-    // instant: false 会让 Live2D 自己处理平滑插值
-    const instant = false // 总是使用缓动效果，无论是鼠标还是输入框
-    model.focus(modelX, modelY, instant)
-
-    // 更新记录的值
-    lastTargetX.value = targetScreenX
-    lastTargetY.value = targetScreenY
-    lastGazeSourceType.value = sourceType
-  }
-}
+// 目光追踪更新逻辑已由 useGaze 提供
 
 // 更新canvas属性和位置
 function updateCanvasProperties() {
-  const canvas = document.querySelector('#canvas') as HTMLCanvasElement
-  if (canvas && app) {
-    // 设置canvas的实际尺寸
-    const newWidth = canvasWidth.value * canvasScale.value
-    const newHeight = canvasHeight.value * canvasScale.value
-
-    canvas.width = newWidth
-    canvas.height = newHeight
-    canvas.style.position = 'absolute'
-    canvas.style.left = `${canvasX.value}px`
-    canvas.style.top = `${canvasY.value}px`
-    if (app.renderer) {
-      app.renderer.resize(newWidth, newHeight)
-    }
-
-    // 重新调整模型位置和缩放以适应新的canvas尺寸
-    if (model) {
-      model.position.set(newWidth / 2, newHeight / 2)
-      // 根据canvas缩放调整模型缩放
-      model.scale.set(baseModelScale * canvasScale.value, baseModelScale * canvasScale.value)
-      // 重新计算输入框位置
-      calculateInputPosition()
-    }
+  updateCanvasPropertiesFromComposable()
+  if (model) {
+    calculateInputPosition()
   }
 }
 
@@ -1110,10 +878,12 @@ function updateCanvasProperties() {
 // 检查鼠标是否在pin按钮区域内
 function isPointInPinButton(clientX: number, clientY: number): boolean {
   const pinButton = document.querySelector('.pin-button') as HTMLElement
-  if (!pinButton) return false
+  if (!pinButton) {
+    return false
+  }
 
   const rect = pinButton.getBoundingClientRect()
-  return clientX >= rect.left && clientX <= rect.right 
+  return clientX >= rect.left && clientX <= rect.right
     && clientY >= rect.top && clientY <= rect.bottom
 }
 
@@ -1122,7 +892,7 @@ function checkMouseInInteractiveArea(clientX: number, clientY: number): boolean 
   if (isPinned.value) {
     return isPointInPinButton(clientX, clientY)
   }
-  
+
   // 正常状态下的交互区域检查
   const inCanvas = isPointInCanvas(clientX, clientY)
   const inInput = isPointInInput(clientX, clientY)
@@ -1153,16 +923,8 @@ function handleMouseMove(event: MouseEvent) {
   // 根据是否在交互区域控制鼠标穿透
   setMouseEventTransparency(!shouldShowInput)
 
-  // 如果正在拖拽，更新canvas位置
-  if (isDragging.value) {
-    const deltaX = event.clientX - dragStartX.value
-    const deltaY = event.clientY - dragStartY.value
-
-    canvasX.value = canvasStartX.value + deltaX
-    canvasY.value = canvasStartY.value + deltaY
-
-    updateCanvasProperties()
-  }
+  // 拖拽移动（内部会判断是否在拖拽中）
+  dragTo(event.clientX, event.clientY)
 }
 
 // 检查点击是否在canvas区域内
@@ -1190,12 +952,7 @@ function handleMouseDown(event: MouseEvent) {
 
   // 只有点击在canvas区域内才处理拖拽
   if (isPointInCanvas(event.clientX, event.clientY)) {
-    isDragging.value = true
-    dragStartX.value = event.clientX
-    dragStartY.value = event.clientY
-    canvasStartX.value = canvasX.value
-    canvasStartY.value = canvasY.value
-
+    startDrag(event.clientX, event.clientY)
     event.preventDefault()
     event.stopPropagation()
   }
@@ -1203,9 +960,7 @@ function handleMouseDown(event: MouseEvent) {
 
 // 鼠标释放事件处理
 function handleMouseUp(_: MouseEvent) {
-  if (isDragging.value) {
-    isDragging.value = false
-  }
+  endDrag()
 }
 
 // 鼠标离开处理
@@ -1227,34 +982,7 @@ function handleWheel(event: WheelEvent) {
     event.preventDefault()
     event.stopPropagation()
 
-    // 计算缩放变化
-    const scaleDelta = event.deltaY > 0 ? -0.1 : 0.1
-    const oldScale = canvasScale.value
-    const newScale = Math.max(minScale, Math.min(maxScale, oldScale + scaleDelta))
-
-    if (newScale !== oldScale) {
-      // 计算鼠标相对于canvas的位置
-      const mouseRelativeX = event.clientX - canvasX.value
-      const mouseRelativeY = event.clientY - canvasY.value
-
-      // 计算缩放后的新尺寸
-      // const oldWidth = canvasWidth.value * oldScale;
-      // const oldHeight = canvasHeight.value * oldScale;
-      // const newWidth = canvasWidth.value * newScale;
-      // const newHeight = canvasHeight.value * newScale;
-
-      // 计算缩放中心点的偏移
-      const scaleRatio = newScale / oldScale
-      const offsetX = mouseRelativeX * (1 - scaleRatio)
-      const offsetY = mouseRelativeY * (1 - scaleRatio)
-
-      // 更新canvas位置和缩放
-      canvasScale.value = newScale
-      canvasX.value += offsetX
-      canvasY.value += offsetY
-
-      updateCanvasProperties()
-    }
+    wheelZoomAt(event.clientX, event.clientY, event.deltaY)
   }
   // 在透明区域滚轮不阻止默认行为，让桌面程序正常响应滚轮
 }
@@ -1497,52 +1225,13 @@ async function switchCharacter(character: Character) {
 
 // 加载 Live2D 模型
 async function loadLive2DModel(modelPath: string) {
-  if (!app) {
-    return
-  }
-
   try {
-    // 移除旧模型
-    if (model) {
-      app.stage.removeChild(model)
-      model.destroy()
-    }
-
     const modelURL = getModelURL(modelPath)
     console.log('Loading model from:', modelURL)
-
-    // 加载新模型
-    model = await Live2DModel.from(modelURL, {
-      ticker: Ticker.shared,
-    })
-
-    console.log('Model loaded successfully')
-    model.setRenderer(app.renderer)
-
-    // 确保模型背景透明
-    if (model.internalModel && model.internalModel.renderer) {
-      // 设置 Live2D 模型渲染器的透明度
-      model.internalModel.renderer.setMvpMatrix(model.internalModel.renderer._mvpMatrix)
-    }
-
-    app.stage.addChild(model)
-
-    // 设置模型显示
-    const initialWidth = canvasWidth.value
-    const initialHeight = canvasHeight.value
-
-    model.anchor.set(0.5, 0.5)
-    model.position.set(initialWidth / 2, initialHeight / 2)
-    baseModelScale = Math.min(initialWidth / model.width, initialHeight / model.height) * 0.8
-    model.scale.set(baseModelScale * canvasScale.value, baseModelScale * canvasScale.value)
-
+    await loadModelFromURL(modelURL)
+    model = modelRef.value
     // 重新计算输入框位置
     calculateInputPosition()
-
-    // 将模型设为全局变量，方便外部访问
-    if (typeof globalThis !== 'undefined') {
-      (globalThis as any).live2dModel = model
-    }
   }
   catch (error) {
     console.error('模型加载失败:', error)
@@ -1842,16 +1531,7 @@ onMounted(async () => {
   const initialWidth = 400
   const initialHeight = 600
 
-  await app.init({
-    width: initialWidth,
-    height: initialHeight,
-    view: canvas,
-    backgroundAlpha: 0,
-    backgroundColor: 0x00_00_00, // 设置透明背景色
-    clearBeforeRender: false, // 不清除背景
-    powerPreference: 'high-performance', // 使用高性能 GPU
-    antialias: false, // 关闭抗锯齿以提升性能
-  })
+  await initApp(canvas, { width: initialWidth, height: initialHeight, backgroundAlpha: 0 })
   // 限制帧率为 60fps 以平衡性能和流畅度
   Ticker.shared.maxFPS = 60
   // 移除不必要的 minFPS 设置
@@ -1865,12 +1545,8 @@ onMounted(async () => {
   let retries = 3
   while (retries > 0) {
     try {
-      model = await Live2DModel.from(modelURL, {
-        ticker: Ticker.shared,
-      })
-      console.log('Model loaded successfully')
-      model.setRenderer(app.renderer)
-      app.stage.addChild(model)
+      await loadModelFromURL(modelURL)
+      model = modelRef.value
       break
     }
     catch (error) {
@@ -1888,14 +1564,7 @@ onMounted(async () => {
   if (typeof globalThis !== 'undefined') {
     (globalThis as any).live2dModel = model
   }
-  if (model) {
-    // 设置模型显示
-    model.anchor.set(0.5, 0.5)
-    model.position.set(initialWidth / 2, initialHeight / 2)
-    baseModelScale = Math.min(initialWidth / model.width, initialHeight / model.height) * 0.8
-    // 确保模型在可视范围内
-    model.scale.set(baseModelScale, baseModelScale)
-  }
+  // 由 useLive2DCanvas 内部完成模型定位与缩放
 
   // 初始化canvas位置和尺寸（仅在localStorage为空时设置默认值）
   if (canvasWidth.value === 800 && canvasHeight.value === 1200) {
@@ -1911,7 +1580,20 @@ onMounted(async () => {
   updateCanvasProperties()
   if (app.ticker) {
     // 启动目光追踪更新循环
-    app.ticker.add(updateGazeParameters)
+    app.ticker.add(() => {
+      updateGazeParameters({
+        model,
+        canvasX: canvasX.value,
+        canvasY: canvasY.value,
+        canvasScale: canvasScale.value,
+        canvasWidth: canvasWidth.value,
+        canvasHeight: canvasHeight.value,
+        mouseX: mouseX.value,
+        mouseY: mouseY.value,
+        isInputFocused: isInputFocused.value,
+        isGazingAtUser: isGazingAtUser.value,
+      })
+    })
     // 启动气泡位置更新循环
     app.ticker.add(updateBubblePosition)
   }
@@ -1949,8 +1631,11 @@ onMounted(async () => {
     })
   }
 
-  // 启动定期目光锁定计时器
-  startGazeAtUserTimer()
+  // 启动定期目光锁定计时器（根据忙碌状态与当前模型）
+  startGazeAtUserTimer(
+    () => isInputFocused.value || showSettings.value || isTyping.value,
+    () => model,
+  )
 })
 
 // 组件卸载时清理事件监听器
@@ -2058,7 +1743,7 @@ onUnmounted(() => {
         >
           <div class="i-carbon-pin text-18px" />
         </button>
-        
+
         <!-- 设置按钮 -->
         <button
           class="settings-button"
@@ -2526,7 +2211,7 @@ onUnmounted(() => {
             <button
               class="action-btn"
               :disabled="!model || !(model as any).setEyesAlwaysLookAtCamera || !gazeAtUserConfig.enabled || isGazingAtUser"
-              @click="startGazeAtUser"
+              @click="() => startGazeAtUser(model)"
             >
               {{ isGazingAtUser ? '正在锁定...' : '立即测试锁定' }}
             </button>
