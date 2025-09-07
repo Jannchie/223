@@ -74,6 +74,7 @@ const HIYORI_CHARACTER: Omit<Character, 'id' | 'createdAt' | 'updatedAt'> = {
 class CharacterServiceImpl implements CharacterService {
   private currentCharacterId: string | null = null
   private initialized = false
+  private readonly CURRENT_ID_KEY = 'current-character-id'
 
   constructor() {
     this._initialize()
@@ -95,7 +96,7 @@ class CharacterServiceImpl implements CharacterService {
       // 确保至少有默认角色
       await this.ensureDefaultCharacter()
 
-      // 获取当前角色
+      // 获取当前角色（优先从本地存储恢复）
       await this.loadCurrentCharacter()
 
       this.initialized = true
@@ -115,27 +116,30 @@ class CharacterServiceImpl implements CharacterService {
   private async ensureDefaultCharacter(): Promise<void> {
     const characters = await repositories.characters.getAll()
     console.log(`当前角色数量: ${characters.length}`)
-    
+
     if (characters.length === 0) {
       console.log('创建预设角色...')
-      
+
       // 创建默认 06 娘角色
       console.log('创建 06 娘角色...')
       const defaultChar = await repositories.characters.create(DEFAULT_CHARACTER)
       console.log('06 娘角色创建成功，ID:', defaultChar.id)
       this.currentCharacterId = defaultChar.id
-      
+      this.setStoredCurrentId(defaultChar.id)
+
       // 创建 Hiyori 预设角色
       try {
         console.log('创建 Hiyori 角色...')
         const hiyoriChar = await repositories.characters.create(HIYORI_CHARACTER)
         console.log('Hiyori 预设角色创建成功，ID:', hiyoriChar.id)
-      } catch (error) {
+      }
+      catch (error) {
         console.warn('创建 Hiyori 预设角色失败:', error)
       }
-    } else {
+    }
+    else {
       console.log('已存在角色，角色列表:', characters.map(c => ({ id: c.id, name: c.name })))
-      
+
       // 检查是否存在 Hiyori 角色，如果不存在则创建
       const hiyoriExists = characters.some(c => c.name === 'Hiyori')
       if (!hiyoriExists) {
@@ -143,7 +147,8 @@ class CharacterServiceImpl implements CharacterService {
         try {
           const hiyoriChar = await repositories.characters.create(HIYORI_CHARACTER)
           console.log('Hiyori 预设角色创建成功，ID:', hiyoriChar.id)
-        } catch (error) {
+        }
+        catch (error) {
           console.warn('创建 Hiyori 预设角色失败:', error)
         }
       }
@@ -151,11 +156,28 @@ class CharacterServiceImpl implements CharacterService {
   }
 
   private async loadCurrentCharacter(): Promise<void> {
+    // 优先从本地存储恢复（兼容字符串/数字主键）
+    const stored = this.getStoredCurrentId()
+    if (stored) {
+      let exists = await (repositories.characters.getById as any)(stored)
+      if (!exists && !Number.isNaN(Number(stored))) {
+        exists = await (repositories.characters.getById as any)(Number(stored))
+      }
+      if (exists) {
+        this.currentCharacterId = (exists as any).id
+        // 确保存储为字符串
+        this.setStoredCurrentId(String((exists as any).id))
+        return
+      }
+      this.setStoredCurrentId(null)
+    }
+
     if (!this.currentCharacterId) {
       // 获取第一个角色作为当前角色
       const characters = await repositories.characters.getAll()
       if (characters.length > 0) {
         this.currentCharacterId = characters[0].id
+        this.setStoredCurrentId(String(this.currentCharacterId))
       }
     }
   }
@@ -216,6 +238,7 @@ class CharacterServiceImpl implements CharacterService {
     if (deleted && this.currentCharacterId === id) {
       const remaining = await repositories.characters.getAll()
       this.currentCharacterId = remaining.length > 0 ? remaining[0].id : null
+      this.setStoredCurrentId(this.currentCharacterId ? String(this.currentCharacterId) : null)
     }
 
     return deleted
@@ -244,6 +267,7 @@ class CharacterServiceImpl implements CharacterService {
     }
 
     this.currentCharacterId = id
+    this.setStoredCurrentId(String(id))
   }
 
   getCurrentCharacterId(): string | null {
@@ -380,6 +404,7 @@ class CharacterServiceImpl implements CharacterService {
     })
 
     this.currentCharacterId = character.id
+    this.setStoredCurrentId(String(character.id))
     return character
   }
 
@@ -399,6 +424,34 @@ class CharacterServiceImpl implements CharacterService {
       ...HIYORI_CHARACTER,
       name,
     })
+  }
+
+  private getStoredCurrentId(): string | null {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        return localStorage.getItem(this.CURRENT_ID_KEY)
+      }
+    }
+    catch {
+      // ignore
+    }
+    return null
+  }
+
+  private setStoredCurrentId(id: string | null): void {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        if (id) {
+          localStorage.setItem(this.CURRENT_ID_KEY, id)
+        }
+        else {
+          localStorage.removeItem(this.CURRENT_ID_KEY)
+        }
+      }
+    }
+    catch {
+      // ignore
+    }
   }
 }
 

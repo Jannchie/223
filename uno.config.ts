@@ -5,11 +5,6 @@ export default defineConfig({
     presetWind4(),
     presetAttributify(),
     presetTypography(),
-    presetIcons({
-      collections: {
-        carbon: () => import('@iconify/json/json/carbon.json').then(i => i.default),
-        material: () => import('@iconify/json/json/material-symbols.json').then(i => i.default),
-      },
-    }),
+    presetIcons(),
   ],
 })

@@ -296,6 +296,7 @@ export function useChatCompatible() {
     character,
     sendMessage,
     clearMessages,
+    setCharacter,
     updateConfig,
   } = useChat()
 
@@ -328,6 +329,7 @@ export function useChatCompatible() {
     character,
     sendMessage,
     clearMessages,
+    setCharacter,
     updateConfig,
     initializeOpenAI,
     getChatInstance,

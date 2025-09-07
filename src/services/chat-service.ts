@@ -89,11 +89,13 @@ class ChatServiceImpl implements ChatService {
         return
       }
 
-      // 准备消息历史
-      const messages = context.currentSession.messages.map(msg => ({
-        role: msg.role as 'system' | 'user' | 'assistant',
-        content: msg.content,
-      }))
+      // 准备消息历史（过滤掉旧版遗留的 system 消息，始终以当前角色的系统提示词为准）
+      const messages = context.currentSession.messages
+        .filter(msg => msg.role !== 'system')
+        .map(msg => ({
+          role: msg.role as 'user' | 'assistant',
+          content: msg.content,
+        }))
 
       // 添加当前用户消息
       messages.push({

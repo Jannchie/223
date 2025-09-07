@@ -15,7 +15,7 @@ import { chatService } from '../services/chat-service'
 import { getRoastPrompt } from '../utils/screenshot-prompts'
 import { RoastHistoryManager, ScreenshotRoastManager } from '../utils/screenshot-roast'
 import CharacterEditor from './CharacterEditor.vue'
-import CharacterSelector from './CharacterSelector.vue'
+import SettingsPanel from './settings/SettingsPanel.vue'
 
 // 语音识别类型定义
 declare global {
@@ -82,7 +82,7 @@ const speakingTimer = ref<NodeJS.Timeout | null>(null)
 
 // 语音识别相关状态
 const isListening = ref(false)
-const recognition = ref<SpeechRecognition | null>(null)
+// const recognition = ref<SpeechRecognition | null>(null)
 const voiceRecognitionAvailable = ref(false)
 const mediaRecorder = ref<MediaRecorder | null>(null)
 const audioChunks = ref<Blob[]>([])
@@ -100,6 +100,7 @@ const {
   error: chatError,
   config: chatConfig,
   sendMessage: chatSendMessage,
+  setCharacter: chatSetCharacter,
   updateConfig,
 } = useChatCompatible()
 
@@ -114,6 +115,14 @@ const baseURL = computed({
 })
 const showSettings = ref(false)
 
+function setApiKey(v: string) {
+  apiKey.value = v
+}
+
+function setBaseURL(v: string) {
+  baseURL.value = v
+}
+
 // 人设管理相关状态
 const currentCharacter = ref<Character | null>(null)
 const activeSettingsTab = ref<'openai' | 'character' | 'roast' | 'recording' | 'gaze'>('openai')
@@ -122,11 +131,9 @@ const isInRecordingWindow = ref(false)
 const showCharacterEditor = ref(false)
 const editingCharacter = ref<Character | null>(null)
 
-// 保存最后选择的角色ID和模型路径
-const lastSelectedCharacterId = useLocalStorage<string | null>('last-selected-character-id', null)
-const lastUsedModelPath = useLocalStorage<string | null>('last-used-model-path', null)
+// 角色选择和模型路径已由服务持久化，移除本地重复记录
 const characterEditorMode = ref<'create' | 'edit'>('create')
-const characterSelectorRef = ref<InstanceType<typeof CharacterSelector> | null>(null)
+const characterListRefreshKey = ref(0)
 
 // 截图吐槽相关状态
 const screenshotRoastManager = ref<ScreenshotRoastManager | null>(null)
@@ -145,14 +152,14 @@ const roastBubbleContent = ref('')
 
 // 目光追踪与锁定（抽为 composable）需要在 watch 使用前初始化
 const {
-  gazeTargetX,
-  gazeTargetY,
+  // gazeTargetX,
+  // gazeTargetY,
   gazeAtUserConfig,
   isGazingAtUser,
   setGazeTarget,
   clearGazeTarget,
   startGazeAtUser,
-  stopGazeAtUser,
+  // stopGazeAtUser,
   startGazeAtUserTimer,
   stopGazeAtUserTimer,
   updateGazeAtUserConfig,
@@ -210,8 +217,8 @@ const {
   canvasWidth,
   canvasHeight,
   canvasScale,
-  minScale,
-  maxScale,
+  // minScale,
+  // maxScale,
   startDrag,
   dragTo,
   endDrag,
@@ -222,8 +229,8 @@ const {
 
 // 拖拽、缩放、画布位置/尺寸由 useLive2DCanvas 管理
 
-// 存储模型的基础缩放比例
-let baseModelScale = 1
+// 存储模型的基础缩放比例（已由 useLive2DCanvas 管理）
+// let baseModelScale = 1
 
 // setGazeTarget / clearGazeTarget 由 useGaze 提供
 
@@ -527,7 +534,7 @@ function blobToBase64(blob: Blob): Promise<string> {
       const base64 = result.split(',')[1]
       resolve(base64)
     }
-    reader.onerror = reject
+    reader.addEventListener('error', () => reject(new Error('FileReader error')))
     reader.readAsDataURL(blob)
   })
 }
@@ -562,7 +569,7 @@ async function sendAudioMessage(base64Audio: string) {
     })
 
     // 将 base64 转换为 File 对象
-    const audioBlob = new Blob([Uint8Array.from(atob(base64Audio), c => c.charCodeAt(0))], {
+    const audioBlob = new Blob([Uint8Array.from(atob(base64Audio), c => c.codePointAt(0) ?? 0)], {
       type: 'audio/webm;codecs=opus',
     })
     const audioFile = new File([audioBlob], 'audio.webm', { type: 'audio/webm;codecs=opus' })
@@ -597,7 +604,7 @@ async function sendAudioMessage(base64Audio: string) {
 async function checkNetworkConnection(): Promise<boolean> {
   try {
     // 尝试连接到一个总是可达的服务
-    const response = await fetch('https://www.google.com/generate_204', {
+    await fetch('https://www.google.com/generate_204', {
       method: 'GET',
       mode: 'no-cors',
       cache: 'no-cache',
@@ -707,39 +714,7 @@ function handleKeyDown(event: KeyboardEvent) {
 }
 
 // 计算用户位置（屏幕中心）
-function getUserPosition(): { x: number, y: number } {
-  // 简单地返回屏幕中心作为"用户位置"
-  return {
-    x: window.innerWidth / 2,
-    y: window.innerHeight / 2,
-  }
-}
-
-// 获取随机化的间隔时间（毫秒）
-function getRandomizedInterval(): number {
-  const baseIntervalMs = gazeAtUserConfig.value.intervalMinutes * 60 * 1000
-
-  if (!gazeAtUserConfig.value.randomizeInterval) {
-    return baseIntervalMs
-  }
-
-  // 在基础时间的 50%-150% 之间随机
-  const randomFactor = 0.5 + Math.random() * 1 // 0.5 到 1.5
-  return Math.round(baseIntervalMs * randomFactor)
-}
-
-// 获取随机化的锁定持续时间（毫秒）
-function getRandomizedDuration(): number {
-  const baseDurationMs = gazeAtUserConfig.value.lockDurationSeconds * 1000
-
-  if (!gazeAtUserConfig.value.randomizeDuration) {
-    return baseDurationMs
-  }
-
-  // 在基础时间的 70%-130% 之间随机
-  const randomFactor = 0.7 + Math.random() * 0.6 // 0.7 到 1.3
-  return Math.round(baseDurationMs * randomFactor)
-}
+// 已移除未使用的辅助函数（用户位置与随机化间隔/时长）
 
 // startGazeAtUser / stopGazeAtUser 由 useGaze 提供
 
@@ -749,8 +724,8 @@ function getRandomizedDuration(): number {
 
 // 将钩子函数暴露到全局
 if (typeof globalThis !== 'undefined') {
-  (globalThis as any).setGazeTarget = setGazeTarget;
-  (globalThis as any).clearGazeTarget = clearGazeTarget
+  ;(globalThis as any).setGazeTarget = setGazeTarget
+  ;(globalThis as any).clearGazeTarget = clearGazeTarget
 }
 
 // 获取角色头顶的屏幕坐标
@@ -1083,41 +1058,11 @@ function getModelURL(modelPath = '06-v2.1024/06-v2.model3.json') {
 // 人设管理相关方法
 async function loadCurrentCharacter() {
   try {
-    // 优先加载上次选择的角色
-    let targetCharacter: Character | null = null
-
-    if (lastSelectedCharacterId.value) {
-      console.log('尝试加载上次选择的角色:', lastSelectedCharacterId.value)
-      // 确保ID类型匹配：先尝试字符串，再尝试数字
-      targetCharacter = await characterService.getCharacter(lastSelectedCharacterId.value)
-
-      if (!targetCharacter && !isNaN(Number(lastSelectedCharacterId.value))) {
-        // 如果字符串查找失败，尝试数字查找
-        console.log('尝试数字ID查找:', Number(lastSelectedCharacterId.value))
-        targetCharacter = await characterService.getCharacter(Number(lastSelectedCharacterId.value) as any)
-      }
-
-      if (!targetCharacter) {
-        console.log('上次选择的角色不存在，重置选择')
-        lastSelectedCharacterId.value = null
-        lastUsedModelPath.value = null
-      }
-    }
-
-    // 如果没有上次选择的角色，使用角色服务的当前角色
-    if (!targetCharacter) {
-      targetCharacter = await characterService.getCurrentCharacterAsync()
-    }
-
+    const targetCharacter = await characterService.getCurrentCharacterAsync()
     currentCharacter.value = targetCharacter
-
-    // 更新保存的选择
     if (targetCharacter) {
-      lastSelectedCharacterId.value = targetCharacter.id.toString()
-      if (targetCharacter.modelPath) {
-        lastUsedModelPath.value = targetCharacter.modelPath
-      }
-
+      // 同步聊天模块的当前角色，确保系统提示词一致
+      await chatSetCharacter(targetCharacter.id)
       console.log('当前角色:', targetCharacter.name, '模型路径:', targetCharacter.modelPath)
     }
   }
@@ -1139,7 +1084,7 @@ function handleCharacterEdit(character: Character) {
 async function handleCharacterDelete(character: Character) {
   try {
     await characterService.deleteCharacter(character.id)
-    characterSelectorRef.value?.refresh()
+    characterListRefreshKey.value++
 
     // 如果删除的是当前角色，切换到第一个可用角色
     if (currentCharacter.value?.id === character.id) {
@@ -1165,7 +1110,7 @@ function handleCharacterCreate() {
 
 async function handleCharacterSave(character: Character) {
   showCharacterEditor.value = false
-  characterSelectorRef.value?.refresh()
+  characterListRefreshKey.value++
 
   // 如果保存的是当前角色或者是新创建的角色，切换到该角色
   if (!currentCharacter.value || character.id === currentCharacter.value.id || characterEditorMode.value === 'create') {
@@ -1174,9 +1119,7 @@ async function handleCharacterSave(character: Character) {
   else {
     // 如果编辑的不是当前角色，但用户可能想切换到编辑的角色
     // 更新保存记录（如果用户之后手动选择这个角色，会记住新的设置）
-    if (character.modelPath) {
-      console.log('更新角色模型路径记录:', character.name, character.modelPath)
-    }
+    // 由服务层持久化，无需本地记录
   }
 
   showTemporaryBubble(`角色 "${character.name}" 已保存`)
@@ -1196,14 +1139,11 @@ async function handleCharacterEditorDelete(character: Character) {
 // 切换角色
 async function switchCharacter(character: Character) {
   try {
+    // 更新聊天组合式中的当前角色，确保对话使用最新人设
+    await chatSetCharacter(character.id)
+    // 同步服务层当前角色（兼容其他使用该服务的模块）
     await characterService.setCurrentCharacter(character.id)
     currentCharacter.value = character
-
-    // 保存最后选择的角色和模型路径（确保ID为字符串格式）
-    lastSelectedCharacterId.value = character.id.toString()
-    if (character.modelPath) {
-      lastUsedModelPath.value = character.modelPath
-    }
 
     console.log('保存角色选择:', character.name, 'ID:', character.id.toString())
 
@@ -1229,7 +1169,7 @@ async function loadLive2DModel(modelPath: string) {
     const modelURL = getModelURL(modelPath)
     console.log('Loading model from:', modelURL)
     await loadModelFromURL(modelURL)
-    model = modelRef.value
+    model = modelRef.value as unknown as Live2DModel | null
     // 重新计算输入框位置
     calculateInputPosition()
   }
@@ -1246,8 +1186,8 @@ function switchSettingsTab(tab: 'openai' | 'character' | 'roast' | 'recording' |
 // 打开录制窗口
 async function openRecordingWindow() {
   try {
-    if (globalThis.electronAPI?.openRecordingWindow) {
-      const success = await globalThis.electronAPI.openRecordingWindow()
+    if ((globalThis as any).electronAPI?.openRecordingWindow) {
+      const success = await (globalThis as any).electronAPI.openRecordingWindow()
       if (success) {
         isRecordingWindowOpen.value = true
         showTemporaryBubble('录制窗口已打开')
@@ -1263,8 +1203,8 @@ async function openRecordingWindow() {
 // 关闭录制窗口
 async function closeRecordingWindow() {
   try {
-    if (globalThis.electronAPI?.closeRecordingWindow) {
-      const success = await globalThis.electronAPI.closeRecordingWindow()
+    if ((globalThis as any).electronAPI?.closeRecordingWindow) {
+      const success = await (globalThis as any).electronAPI.closeRecordingWindow()
       if (success) {
         isRecordingWindowOpen.value = false
         showTemporaryBubble('录制窗口已关闭')
@@ -1477,8 +1417,8 @@ onMounted(async () => {
 
   // 获取录制窗口状态
   try {
-    if (globalThis.electronAPI?.getRecordingWindowStatus) {
-      isRecordingWindowOpen.value = await globalThis.electronAPI.getRecordingWindowStatus()
+  if ((globalThis as any).electronAPI?.getRecordingWindowStatus) {
+      isRecordingWindowOpen.value = !!(await (globalThis as any).electronAPI.getRecordingWindowStatus())
     }
   }
   catch (error) {
@@ -1490,8 +1430,8 @@ onMounted(async () => {
   isInRecordingWindow.value = urlParams.get('recording') === 'true'
 
   // 监听录制模式设置
-  if (globalThis.electronAPI?.onSetRecordingMode) {
-    globalThis.electronAPI.onSetRecordingMode((isRecording) => {
+  if ((globalThis as any).electronAPI?.onSetRecordingMode) {
+    (globalThis as any).electronAPI.onSetRecordingMode((isRecording: boolean) => {
       isInRecordingWindow.value = isRecording
     })
   }
@@ -1546,7 +1486,7 @@ onMounted(async () => {
   while (retries > 0) {
     try {
       await loadModelFromURL(modelURL)
-      model = modelRef.value
+      model = modelRef.value as unknown as Live2DModel | null
       break
     }
     catch (error) {
@@ -1580,7 +1520,7 @@ onMounted(async () => {
   updateCanvasProperties()
   if (app.ticker) {
     // 启动目光追踪更新循环
-    app.ticker.add(() => {
+    const gazeTicker = () => {
       updateGazeParameters({
         model,
         canvasX: canvasX.value,
@@ -1593,9 +1533,15 @@ onMounted(async () => {
         isInputFocused: isInputFocused.value,
         isGazingAtUser: isGazingAtUser.value,
       })
+    }
+    const bubbleTicker = () => updateBubblePosition()
+    app.ticker.add(gazeTicker as any)
+    app.ticker.add(bubbleTicker as any)
+    // 在卸载时移除这些回调
+    onUnmounted(() => {
+      app.ticker.remove(gazeTicker as any)
+      app.ticker.remove(bubbleTicker as any)
     })
-    // 启动气泡位置更新循环
-    app.ticker.add(updateBubblePosition)
   }
 
   // 计算并设置输入框位置
@@ -1625,8 +1571,8 @@ onMounted(async () => {
   })
 
   // 监听F1快捷键事件
-  if (globalThis.electronAPI?.onHotkeyVoiceRecognition) {
-    globalThis.electronAPI.onHotkeyVoiceRecognition(() => {
+  if ((globalThis as any).electronAPI?.onHotkeyVoiceRecognition) {
+    (globalThis as any).electronAPI.onHotkeyVoiceRecognition(() => {
       startVoiceRecognition()
     })
   }
@@ -1636,6 +1582,17 @@ onMounted(async () => {
     () => isInputFocused.value || showSettings.value || isTyping.value,
     () => model,
   )
+
+  // 同步录制窗口状态（防止出现 null/undefined）
+  if ((globalThis as any).electronAPI?.getRecordingWindowStatus) {
+    try {
+      const status = await (globalThis as any).electronAPI.getRecordingWindowStatus()
+      isRecordingWindowOpen.value = !!status
+    }
+    catch {
+      isRecordingWindowOpen.value = false
+    }
+  }
 })
 
 // 组件卸载时清理事件监听器
@@ -1668,10 +1625,7 @@ onUnmounted(() => {
   // 清理全局鼠标事件监听器
   document.removeEventListener('mousemove', handleMouseMove)
   // 清理ticker
-  if (app) {
-    Ticker.shared.remove(updateGazeParameters)
-    Ticker.shared.remove(updateBubblePosition)
-  }
+  // 回调已通过 app.ticker.remove 在注册处移除
   // 清理全局函数和变量
   if (typeof globalThis !== 'undefined') {
     delete (globalThis as any).setGazeTarget
@@ -1809,429 +1763,41 @@ onUnmounted(() => {
     </div>
   </div>
 
-  <!-- 设置面板 - 独立于主容器 -->
-  <teleport to="body">
-    <div v-if="showSettings" class="settings-overlay" @click="cancelSettings">
-      <div class="settings-panel" @click.stop @keydown.stop @keyup.stop @keypress.stop>
-        <!-- 标签导航 -->
-        <div class="settings-tabs">
-          <button
-            class="tab-button"
-            :class="{ active: activeSettingsTab === 'character' }"
-            @click="switchSettingsTab('character')"
-          >
-            角色管理
-          </button>
-          <button
-            class="tab-button"
-            :class="{ active: activeSettingsTab === 'openai' }"
-            @click="switchSettingsTab('openai')"
-          >
-            OpenAI 设置
-          </button>
-          <button
-            class="tab-button"
-            :class="{ active: activeSettingsTab === 'roast' }"
-            @click="switchSettingsTab('roast')"
-          >
-            截图吐槽
-          </button>
-          <button
-            class="tab-button"
-            :class="{ active: activeSettingsTab === 'recording' }"
-            @click="switchSettingsTab('recording')"
-          >
-            录制窗口
-          </button>
-          <button
-            class="tab-button"
-            :class="{ active: activeSettingsTab === 'gaze' }"
-            @click="switchSettingsTab('gaze')"
-          >
-            目光跟踪
-          </button>
-        </div>
+  
 
-        <!-- 角色管理标签页 -->
-        <div v-if="activeSettingsTab === 'character'" class="tab-content">
-          <h3>角色管理</h3>
-          <CharacterSelector
-            ref="characterSelectorRef"
-            :current-character-id="currentCharacter?.id?.toString() || null"
-            @select="handleCharacterSelect"
-            @edit="handleCharacterEdit"
-            @delete="handleCharacterDelete"
-            @create="handleCharacterCreate"
-          />
-        </div>
-
-        <!-- OpenAI 设置标签页 -->
-        <div v-if="activeSettingsTab === 'openai'" class="tab-content">
-          <h3>OpenAI 设置</h3>
-          <div class="setting-item">
-            <label>API Key:</label>
-            <input
-              v-model="apiKey"
-              type="password"
-              placeholder="输入你的 OpenAI API Key"
-              class="setting-input"
-            >
-          </div>
-          <div class="setting-item">
-            <label>Base URL:</label>
-            <input
-              v-model="baseURL"
-              type="text"
-              placeholder="API 基础地址"
-              class="setting-input"
-            >
-          </div>
-          <div class="setting-actions">
-            <button class="save-btn" @click="saveSettings">
-              保存
-            </button>
-            <button class="cancel-btn" @click="cancelSettings">
-              取消
-            </button>
-          </div>
-        </div>
-
-        <!-- 截图吐槽标签页 -->
-        <div v-if="activeSettingsTab === 'roast'" class="tab-content">
-          <h3>截图吐槽设置</h3>
-
-          <!-- 功能开关 -->
-          <div class="setting-item">
-            <label>启用自动吐槽:</label>
-            <button
-              class="toggle-btn"
-              :class="{ active: roastConfig.enabled }"
-              @click="toggleAutoRoast"
-            >
-              {{ roastConfig.enabled ? '已开启' : '已关闭' }}
-            </button>
-          </div>
-
-          <!-- 吐槽间隔 -->
-          <div class="setting-item">
-            <label>吐槽间隔（分钟）:</label>
-            <select
-              :value="roastConfig.interval"
-              class="setting-select"
-              @change="setRoastInterval(Number(($event.target as HTMLSelectElement).value))"
-            >
-              <option value="1">
-                1 分钟
-              </option>
-              <option value="3">
-                3 分钟
-              </option>
-              <option value="5">
-                5 分钟
-              </option>
-              <option value="10">
-                10 分钟
-              </option>
-              <option value="15">
-                15 分钟
-              </option>
-              <option value="30">
-                30 分钟
-              </option>
-              <option value="60">
-                60 分钟
-              </option>
-            </select>
-          </div>
-
-          <!-- 吐槽风格 -->
-          <div class="setting-item">
-            <label>吐槽风格:</label>
-            <select
-              :value="roastConfig.style"
-              class="setting-select"
-              @change="setRoastStyle(($event.target as HTMLSelectElement).value as RoastStyle)"
-            >
-              <option value="default">
-                默认 - 幽默风趣
-              </option>
-              <option value="gentle">
-                温柔 - 温暖关怀
-              </option>
-              <option value="savage">
-                毒舌 - 犀利直白
-              </option>
-              <option value="professional">
-                专业 - 建设性建议
-              </option>
-            </select>
-          </div>
-
-          <!-- 手动触发 -->
-          <div class="setting-item">
-            <label>手动触发:</label>
-            <div class="manual-trigger-group">
-              <button
-                class="action-btn"
-                :disabled="isRoasting"
-                @click="triggerManualRoast"
-              >
-                {{ isRoasting ? '正在吐槽...' : '立即吐槽' }}
-              </button>
-              <div class="hotkey-tip">
-                <span class="hotkey-label">快捷键:</span>
-                <kbd class="hotkey-kbd">F7</kbd>
-              </div>
-            </div>
-          </div>
-
-          <!-- 当前吐槽 -->
-          <div v-if="currentRoast" class="current-roast">
-            <h4>最新吐槽</h4>
-            <div class="roast-content">
-              {{ currentRoast.text }}
-            </div>
-            <div class="roast-time">
-              {{ new Date(currentRoast.timestamp).toLocaleString() }}
-            </div>
-          </div>
-
-          <!-- 历史记录 -->
-          <div v-if="roastHistory.length > 0" class="roast-history">
-            <div class="history-header">
-              <h4>历史记录</h4>
-              <button class="clear-btn" @click="clearRoastHistory">
-                清空
-              </button>
-            </div>
-            <div class="history-list">
-              <div
-                v-for="roast in roastHistory.slice(0, 5)"
-                :key="roast.timestamp"
-                class="history-item"
-              >
-                <div class="history-content">
-                  {{ roast.text }}
-                </div>
-                <div class="history-time">
-                  {{ new Date(roast.timestamp).toLocaleString() }}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="setting-actions">
-            <button class="save-btn" @click="saveSettings">
-              保存
-            </button>
-            <button class="cancel-btn" @click="cancelSettings">
-              取消
-            </button>
-          </div>
-        </div>
-
-        <!-- 录制窗口标签页 -->
-        <div v-if="activeSettingsTab === 'recording'" class="tab-content">
-          <h3>录制窗口设置</h3>
-          <div class="setting-item">
-            <label>录制窗口:</label>
-            <div class="recording-mode-info">
-              <p class="mode-description">
-                {{ isRecordingWindowOpen ? '录制窗口已打开，可供OBS等录制软件捕获' : '录制窗口已关闭' }}
-              </p>
-              <button
-                class="toggle-btn"
-                :class="{ active: isRecordingWindowOpen }"
-                @click="toggleRecordingWindow"
-              >
-                {{ isRecordingWindowOpen ? '关闭录制窗口' : '打开录制窗口' }}
-              </button>
-            </div>
-          </div>
-
-          <div class="setting-item">
-            <div class="recording-tips">
-              <h4>使用说明:</h4>
-              <ul>
-                <li>主窗口：保持透明，适合日常使用和交互</li>
-                <li>录制窗口：独立窗口，带有背景色，专供录制软件捕获</li>
-                <li>两个窗口显示相同的Live2D角色，互不干扰</li>
-                <li>可以同时使用主窗口进行交互，用录制窗口进行直播/录制</li>
-                <li>也可通过系统托盘右键菜单快速操作</li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="setting-actions">
-            <button class="save-btn" @click="saveSettings">
-              保存
-            </button>
-            <button class="cancel-btn" @click="cancelSettings">
-              取消
-            </button>
-          </div>
-        </div>
-
-        <!-- 目光跟踪标签页 -->
-        <div v-if="activeSettingsTab === 'gaze'" class="tab-content">
-          <h3>目光跟踪设置</h3>
-
-          <!-- 定期锁定用户功能开关 -->
-          <div class="setting-item">
-            <label>定期目光锁定:</label>
-            <button
-              class="toggle-btn"
-              :class="{ active: gazeAtUserConfig.enabled }"
-              @click="updateGazeAtUserConfig({ enabled: !gazeAtUserConfig.enabled })"
-            >
-              {{ gazeAtUserConfig.enabled ? '已开启' : '已关闭' }}
-            </button>
-            <p class="setting-description">
-              角色会定期看向用户，增加互动感
-            </p>
-          </div>
-
-          <!-- 锁定间隔设置 -->
-          <div class="setting-item">
-            <label>锁定间隔（分钟）:</label>
-            <select
-              :value="gazeAtUserConfig.intervalMinutes"
-              class="setting-select"
-              :disabled="!gazeAtUserConfig.enabled"
-              @change="updateGazeAtUserConfig({ intervalMinutes: Number(($event.target as HTMLSelectElement).value) })"
-            >
-              <option value="0.5">
-                30 秒
-              </option>
-              <option value="1">
-                1 分钟
-              </option>
-              <option value="2">
-                2 分钟
-              </option>
-              <option value="3">
-                3 分钟
-              </option>
-              <option value="5">
-                5 分钟
-              </option>
-              <option value="10">
-                10 分钟
-              </option>
-            </select>
-          </div>
-
-          <!-- 锁定持续时间设置 -->
-          <div class="setting-item">
-            <label>锁定持续时间（秒）:</label>
-            <select
-              :value="gazeAtUserConfig.lockDurationSeconds"
-              class="setting-select"
-              :disabled="!gazeAtUserConfig.enabled"
-              @change="updateGazeAtUserConfig({ lockDurationSeconds: Number(($event.target as HTMLSelectElement).value) })"
-            >
-              <option value="1">
-                1 秒
-              </option>
-              <option value="2">
-                2 秒
-              </option>
-              <option value="3">
-                3 秒
-              </option>
-              <option value="5">
-                5 秒
-              </option>
-              <option value="7">
-                7 秒
-              </option>
-              <option value="10">
-                10 秒
-              </option>
-            </select>
-          </div>
-
-          <!-- 随机化间隔时间 -->
-          <div class="setting-item">
-            <label>随机化间隔时间:</label>
-            <button
-              class="toggle-btn"
-              :class="{ active: gazeAtUserConfig.randomizeInterval }"
-              :disabled="!gazeAtUserConfig.enabled"
-              @click="updateGazeAtUserConfig({ randomizeInterval: !gazeAtUserConfig.randomizeInterval })"
-            >
-              {{ gazeAtUserConfig.randomizeInterval ? '已开启' : '已关闭' }}
-            </button>
-            <p class="setting-description">
-              在设定间隔的 50%-150% 之间随机变化，让行为更自然
-            </p>
-          </div>
-
-          <!-- 随机化锁定时间 -->
-          <div class="setting-item">
-            <label>随机化锁定时间:</label>
-            <button
-              class="toggle-btn"
-              :class="{ active: gazeAtUserConfig.randomizeDuration }"
-              :disabled="!gazeAtUserConfig.enabled"
-              @click="updateGazeAtUserConfig({ randomizeDuration: !gazeAtUserConfig.randomizeDuration })"
-            >
-              {{ gazeAtUserConfig.randomizeDuration ? '已开启' : '已关闭' }}
-            </button>
-            <p class="setting-description">
-              在设定时长的 70%-130% 之间随机变化，避免过于规律
-            </p>
-          </div>
-
-          <!-- 当前状态显示 -->
-          <div class="setting-item">
-            <label>当前状态:</label>
-            <div class="status-display">
-              <span v-if="!model" class="status-indicator">
-                模型未加载
-              </span>
-              <span v-else-if="!(model as any).setEyesAlwaysLookAtCamera" class="status-indicator warning">
-                模型不支持眼睛锁定
-              </span>
-              <span v-else-if="!gazeAtUserConfig.enabled" class="status-indicator">
-                已停用
-              </span>
-              <span v-else-if="isGazingAtUser" class="status-indicator active">
-                正在锁定用户
-              </span>
-              <span v-else class="status-indicator" :class="{ active: gazeAtUserConfig.enabled }">
-                等待中
-              </span>
-            </div>
-          </div>
-
-          <!-- 测试按钮 -->
-          <div class="setting-item">
-            <label>测试功能:</label>
-            <button
-              class="action-btn"
-              :disabled="!model || !(model as any).setEyesAlwaysLookAtCamera || !gazeAtUserConfig.enabled || isGazingAtUser"
-              @click="() => startGazeAtUser(model)"
-            >
-              {{ isGazingAtUser ? '正在锁定...' : '立即测试锁定' }}
-            </button>
-            <p v-if="model && !(model as any).setEyesAlwaysLookAtCamera" class="setting-description warning-text">
-              当前Live2D模型不支持眼睛锁定功能
-            </p>
-          </div>
-
-          <div class="setting-actions">
-            <button class="save-btn" @click="saveSettings">
-              保存
-            </button>
-            <button class="cancel-btn" @click="cancelSettings">
-              取消
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </teleport>
+  <!-- 新的设置面板组件 -->
+  <SettingsPanel
+    :visible="showSettings"
+    :active-tab="activeSettingsTab"
+    :api-key="apiKey"
+    :base-u-r-l="baseURL"
+    :current-character-id="currentCharacter?.id?.toString() || null"
+    :character-refresh-key="characterListRefreshKey"
+    :roast-config="roastConfig"
+    :is-roasting="isRoasting"
+    :current-roast="currentRoast"
+    :roast-history="roastHistory"
+    :is-recording-window-open="!!isRecordingWindowOpen"
+    :gaze-at-user-config="gazeAtUserConfig"
+    :model="model"
+    @update:active-tab="switchSettingsTab"
+    @update:api-key="setApiKey"
+    @update:base-u-r-l="setBaseURL"
+    @character-select="handleCharacterSelect"
+    @character-edit="handleCharacterEdit"
+    @character-delete="handleCharacterDelete"
+    @character-create="handleCharacterCreate"
+    @roast-toggle-auto="toggleAutoRoast"
+    @roast-set-interval="setRoastInterval"
+    @roast-set-style="setRoastStyle"
+    @roast-trigger="triggerManualRoast"
+    @roast-clear-history="clearRoastHistory"
+    @recording-toggle="toggleRecordingWindow"
+    @gaze-update-config="updateGazeAtUserConfig"
+    @gaze-test-lock="() => startGazeAtUser(model)"
+    @save="saveSettings"
+    @cancel="cancelSettings"
+  />
 
   <!-- 人设编辑器弹窗 -->
   <teleport to="body">
@@ -2555,112 +2121,7 @@ onUnmounted(() => {
   }
 }
 
-/* 设置面板样式 */
-.settings-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 10000;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  -webkit-app-region: no-drag;
-  pointer-events: auto;
-}
-
-.settings-panel {
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 12px;
-  padding: 0;
-  min-width: 400px;
-  max-width: 500px;
-  min-height: 500px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-  pointer-events: auto;
-  max-height: 85vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 标签页导航样式 */
-.settings-tabs {
-  display: flex;
-  border-bottom: 1px solid #e0e0e0;
-  background: #f8f9fa;
-  border-radius: 12px 12px 0 0;
-}
-
-.tab-button {
-  flex: 1;
-  padding: 16px 20px;
-  border: none;
-  background: transparent;
-  color: #666;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border-radius: 12px 12px 0 0;
-}
-
-.tab-button:first-child {
-  border-radius: 12px 0 0 0;
-}
-
-.tab-button:last-child {
-  border-radius: 0 12px 0 0;
-}
-
-.tab-button:hover {
-  background: rgba(74, 158, 255, 0.1);
-  color: #333;
-}
-
-.tab-button.active {
-  background: white;
-  color: #4a9eff;
-  font-weight: 600;
-  border-bottom: 2px solid #4a9eff;
-}
-
-/* 标签页内容样式 */
-.tab-content {
-  padding: 24px;
-  flex: 1;
-  overflow-y: auto;
-  min-height: 400px;
-  /* 确保滚动条样式美观 */
-  scrollbar-width: thin;
-  scrollbar-color: #ccc transparent;
-}
-
-.tab-content::-webkit-scrollbar {
-  width: 6px;
-}
-
-.tab-content::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.tab-content::-webkit-scrollbar-thumb {
-  background: #ccc;
-  border-radius: 3px;
-}
-
-.tab-content::-webkit-scrollbar-thumb:hover {
-  background: #999;
-}
-
-.tab-content h3 {
-  margin: 0 0 20px 0;
-  color: #333;
-  font-size: 18px;
-  text-align: center;
-}
+/* 设置面板相关样式已迁移到 SettingsPanel 与各 Tab 组件 */
 
 /* 人设编辑器弹窗样式 */
 .editor-overlay {
@@ -2685,231 +2146,9 @@ onUnmounted(() => {
   pointer-events: auto;
 }
 
-.setting-item {
-  margin-bottom: 16px;
-}
+/* 设置项/按钮样式已由 SettingsPanel 子组件提供 */
 
-.setting-item label {
-  display: block;
-  margin-bottom: 4px;
-  color: #555;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.setting-input {
-  width: 100%;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 14px;
-  box-sizing: border-box;
-  outline: none;
-  transition: border-color 0.2s;
-  pointer-events: auto !important;
-  -webkit-app-region: no-drag;
-}
-
-.setting-input:focus {
-  border-color: #4a9eff;
-}
-
-.setting-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  margin-top: 20px;
-}
-
-.save-btn, .cancel-btn {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.save-btn {
-  background: #4a9eff;
-  color: white;
-}
-
-.save-btn:hover {
-  background: #3a8eef;
-}
-
-.cancel-btn {
-  background: #f0f0f0;
-  color: #666;
-}
-
-.cancel-btn:hover {
-  background: #e0e0e0;
-}
-
-/* 截图吐槽设置样式 */
-.toggle-btn {
-  padding: 8px 16px;
-  border: 2px solid #ddd;
-  border-radius: 20px;
-  background: #f8f9fa;
-  color: #666;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.toggle-btn:hover {
-  border-color: #007bff;
-  background: #e7f3ff;
-}
-
-.toggle-btn.active {
-  border-color: #28a745;
-  background: linear-gradient(135deg, #28a745, #20c997);
-  color: white;
-  box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
-}
-
-.setting-select {
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  background: white;
-  font-size: 14px;
-  min-width: 150px;
-}
-
-.setting-select:focus {
-  outline: none;
-  border-color: #007bff;
-  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
-}
-
-.action-btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #ff6b6b, #feca57);
-  color: white;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
-}
-
-.action-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
-}
-
-.action-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.manual-trigger-group {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.hotkey-tip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #666;
-  font-size: 12px;
-}
-
-.hotkey-label {
-  font-weight: 500;
-}
-
-.hotkey-kbd {
-  display: inline-block;
-  padding: 4px 8px;
-  background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-  border: 1px solid #dee2e6;
-  border-radius: 4px;
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 11px;
-  font-weight: bold;
-  color: #495057;
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
-  min-width: 24px;
-  text-align: center;
-}
-
-.current-roast {
-  margin-top: 20px;
-  padding: 16px;
-  background: linear-gradient(135deg, rgba(255, 107, 107, 0.1), rgba(254, 202, 87, 0.1));
-  border: 1px solid rgba(255, 107, 107, 0.3);
-  border-radius: 12px;
-}
-
-.current-roast h4 {
-  margin: 0 0 10px 0;
-  color: #ff6b6b;
-  font-size: 16px;
-}
-
-.roast-content {
-  background: rgba(255, 255, 255, 0.9);
-  padding: 12px;
-  border-radius: 8px;
-  margin-bottom: 8px;
-  color: #333;
-  line-height: 1.4;
-}
-
-.roast-time {
-  font-size: 12px;
-  color: #666;
-  text-align: right;
-}
-
-.roast-history {
-  margin-top: 20px;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-.history-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.history-header h4 {
-  margin: 0;
-  color: #333;
-  font-size: 16px;
-}
-
-.clear-btn {
-  padding: 6px 12px;
-  border: 1px solid #dc3545;
-  border-radius: 6px;
-  background: transparent;
-  color: #dc3545;
-  cursor: pointer;
-  font-size: 12px;
-  transition: all 0.2s ease;
-}
-
-.clear-btn:hover {
-  background: #dc3545;
-  color: white;
-}
+/* 设置面板内样式（吐槽/录制等）已拆分到独立 Tab 组件 */
 
 .history-list {
   max-height: 150px;
@@ -2957,111 +2196,10 @@ onUnmounted(() => {
     padding: 12px 16px;
   }
 
-  .settings-panel {
-    margin: 20px;
-    min-width: auto;
-    width: calc(100% - 40px);
-  }
+  /* 设置面板响应式样式由 SettingsPanel 组件提供 */
 }
 
-/* 录制模式相关样式 */
-.recording-mode-info {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  background: rgba(0, 123, 255, 0.05);
-  border-radius: 12px;
-  border: 1px solid rgba(0, 123, 255, 0.1);
-}
+/* 录制模式样式已迁移至 RecordingSettings 组件 */
 
-.mode-description {
-  margin: 0;
-  font-size: 14px;
-  color: #555;
-  line-height: 1.4;
-}
-
-.recording-tips {
-  padding: 16px;
-  background: rgba(255, 235, 59, 0.05);
-  border-radius: 8px;
-  border-left: 4px solid #ffc107;
-}
-
-.recording-tips h4 {
-  margin: 0 0 12px 0;
-  font-size: 14px;
-  color: #333;
-  font-weight: 600;
-}
-
-.recording-tips ul {
-  margin: 0;
-  padding-left: 20px;
-}
-
-.recording-tips li {
-  font-size: 13px;
-  color: #666;
-  line-height: 1.4;
-  margin-bottom: 6px;
-}
-
-.recording-tips li:last-child {
-  margin-bottom: 0;
-}
-
-/* 目光跟踪设置样式 */
-.setting-description {
-  margin: 4px 0 0 0;
-  font-size: 12px;
-  color: #666;
-  line-height: 1.3;
-}
-
-.status-display {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.status-indicator {
-  display: inline-block;
-  padding: 4px 8px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
-  background: #f0f0f0;
-  color: #666;
-  transition: all 0.3s ease;
-}
-
-.status-indicator.active {
-  background: linear-gradient(135deg, #28a745, #20c997);
-  color: white;
-  animation: pulse 2s infinite;
-}
-
-.status-indicator.warning {
-  background: linear-gradient(135deg, #ffc107, #fd7e14);
-  color: white;
-}
-
-.warning-text {
-  color: #dc3545 !important;
-  font-weight: 500;
-}
-
-@keyframes pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 0 8px rgba(40, 167, 69, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
-  }
-}
+/* 目光跟踪设置样式已迁移至 GazeSettings 组件 */
 </style>

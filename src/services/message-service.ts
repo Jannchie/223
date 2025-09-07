@@ -7,6 +7,7 @@
 import type { ChatSession, ExtendedMessage, MessageService } from '../types/chat'
 import { useLocalStorage } from '@vueuse/core'
 import { repositories } from '../composables/useDatabase'
+import { characterService } from './character-service'
 import { initializeDatabase } from '../db'
 import { migrateFromLocalStorage, needsMigration } from '../db/migration'
 
@@ -65,7 +66,17 @@ class MessageServiceImpl implements MessageService {
       this.sessionIdStorage.value = ''
 
       // 直接创建新会话
-      const characterId = 'default' // 使用默认人设ID
+      let characterId = 'default'
+      try {
+        // 使用当前角色作为会话角色，以确保系统提示词与角色一致
+        const current = await characterService.getCurrentCharacterAsync()
+        if (current?.id) {
+          characterId = current.id
+        }
+      }
+      catch {
+        // ignore and keep fallback
+      }
       const newSession = await this.createSession(characterId, `新对话 ${new Date().toLocaleString()}`)
       this.currentSessionId = newSession.id
       this.sessionIdStorage.value = this.currentSessionId

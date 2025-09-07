@@ -42,12 +42,12 @@ export function useLive2DCanvas() {
     const { Live2DModel } = await import('@jannchie/pixi-live2d-display')
     // remove previous
     if (model.value) {
-      app.stage.removeChild(model.value)
+      app.stage.removeChild(model.value as any)
       model.value.destroy()
     }
     const m = await Live2DModel.from(modelURL, { ticker: Ticker.shared })
     m.setRenderer(app.renderer)
-    app.stage.addChild(m)
+    app.stage.addChild(m as any)
     model.value = m
     const initialWidth = canvasWidth.value
     const initialHeight = canvasHeight.value

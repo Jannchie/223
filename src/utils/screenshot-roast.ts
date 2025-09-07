@@ -4,8 +4,9 @@
  */
 
 import type { ChatConfig, StreamingCallbacks } from '../types/chat'
+import type { RoastStyle } from './screenshot-prompts'
 import { chatService } from '../services/chat-service'
-import { getRoastPrompt, type RoastStyle } from './screenshot-prompts'
+import { getRoastPrompt } from './screenshot-prompts'
 
 export interface ScreenshotRoastConfig {
   enabled: boolean
@@ -33,7 +34,7 @@ export class ScreenshotRoastManager {
     enabled: false,
     interval: 5,
     style: 'default',
-    autoTrigger: false
+    autoTrigger: false,
   }
 
   private timer: NodeJS.Timeout | null = null
@@ -44,16 +45,17 @@ export class ScreenshotRoastManager {
     private onRoast: (result: RoastResult) => void,
     private onError: (error: string) => void,
     private streamingCallbacks?: StreamingRoastCallbacks,
-    private roastHistoryManager?: RoastHistoryManager
+    private roastHistoryManager?: RoastHistoryManager,
   ) {}
 
   // 更新配置
   updateConfig(newConfig: Partial<ScreenshotRoastConfig>) {
     this.config = { ...this.config, ...newConfig }
-    
+
     if (this.config.enabled && this.config.autoTrigger) {
       this.startAutoRoast()
-    } else {
+    }
+    else {
       this.stopAutoRoast()
     }
   }
@@ -86,10 +88,12 @@ export class ScreenshotRoastManager {
 
       // 生成吐槽
       await this.generateRoast(screenshot)
-    } catch (error) {
+    }
+    catch (error) {
       console.error('截图吐槽失败:', error)
       this.onError(error instanceof Error ? error.message : '未知错误')
-    } finally {
+    }
+    finally {
       this.isProcessing = false
     }
   }
@@ -97,7 +101,7 @@ export class ScreenshotRoastManager {
   // 启动自动吐槽定时器
   private startAutoRoast() {
     this.stopAutoRoast()
-    
+
     this.timer = setInterval(async () => {
       if (this.config.enabled && !this.isProcessing) {
         await this.triggerRoast()
@@ -122,7 +126,8 @@ export class ScreenshotRoastManager {
 
       const screenshot = await (globalThis as any).electronAPI.takeScreenshot()
       return screenshot
-    } catch (error) {
+    }
+    catch (error) {
       console.error('截图失败:', error)
       return null
     }
@@ -137,10 +142,7 @@ export class ScreenshotRoastManager {
     }
 
     const prompt = getRoastPrompt(this.config.style)
-    const roastText = "请看看我的屏幕，给我来一段吐槽吧！"
-
-    let fullContent = ''
-
+    const roastText = '请看看我的屏幕，给我来一段吐槽吧！'
     // 如果有流式回调，触发开始事件
     if (this.streamingCallbacks?.onStart) {
       this.streamingCallbacks.onStart()
@@ -148,7 +150,6 @@ export class ScreenshotRoastManager {
 
     const callbacks: StreamingCallbacks = {
       onToken: (token: string) => {
-        fullContent += token
         // 如果有流式回调，触发token事件
         if (this.streamingCallbacks?.onToken) {
           this.streamingCallbacks.onToken(token)
@@ -160,16 +161,17 @@ export class ScreenshotRoastManager {
           timestamp: Date.now(),
           // 不保存截图本体，节省内存空间
         }
-        
+
         // 添加到历史记录（包含内容特征）
         if (this.roastHistoryManager) {
           this.roastHistoryManager.addRoastWithContentCheck(result, screenshot)
         }
-        
+
         // 如果有流式回调，使用流式完成回调；否则使用传统回调
         if (this.streamingCallbacks?.onComplete) {
           this.streamingCallbacks.onComplete(result)
-        } else {
+        }
+        else {
           this.onRoast(result)
         }
       },
@@ -178,10 +180,11 @@ export class ScreenshotRoastManager {
         // 如果有流式回调，使用流式错误回调；否则使用传统回调
         if (this.streamingCallbacks?.onError) {
           this.streamingCallbacks.onError(errorMsg)
-        } else {
+        }
+        else {
           this.onError(errorMsg)
         }
-      }
+      },
     }
 
     try {
@@ -190,9 +193,10 @@ export class ScreenshotRoastManager {
         screenshot,
         this.chatConfig,
         prompt,
-        callbacks
+        callbacks,
       )
-    } catch (error) {
+    }
+    catch (error) {
       console.error('发送图片消息失败:', error)
       this.onError('发送图片消息失败')
     }
@@ -223,7 +227,7 @@ export class RoastHistoryManager {
 
   addRoast(result: RoastResult) {
     this.history.unshift(result)
-    
+
     // 限制历史记录数量
     if (this.history.length > this.maxHistorySize) {
       this.history = this.history.slice(0, this.maxHistorySize)
@@ -244,16 +248,16 @@ export class RoastHistoryManager {
 
   // 按时间范围获取历史记录
   getHistoryByTimeRange(startTime: number, endTime: number): RoastResult[] {
-    return this.history.filter(roast => 
-      roast.timestamp >= startTime && roast.timestamp <= endTime
+    return this.history.filter(roast =>
+      roast.timestamp >= startTime && roast.timestamp <= endTime,
     )
   }
 
   // 搜索历史记录
   searchHistory(query: string): RoastResult[] {
     const lowerQuery = query.toLowerCase()
-    return this.history.filter(roast => 
-      roast.text.toLowerCase().includes(lowerQuery)
+    return this.history.filter(roast =>
+      roast.text.toLowerCase().includes(lowerQuery),
     )
   }
 
@@ -261,38 +265,40 @@ export class RoastHistoryManager {
   private generateContentHash(screenshot: string): string {
     // 使用简单的哈希算法，基于图片的尺寸和部分像素信息
     let hash = 0
-    const str = screenshot.substring(0, Math.min(1000, screenshot.length)) // 只取前1000个字符
-    
+    const str = screenshot.slice(0, Math.max(0, Math.min(1000, screenshot.length))) // 只取前1000个字符
+
     for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i)
+      const char = str.codePointAt(i) ?? 0
       hash = ((hash << 5) - hash) + char
       hash = hash & hash // 转换为32位整数
     }
-    
+
     return Math.abs(hash).toString(36)
   }
 
   // 计算两个哈希的相似度（简化版本）
   private calculateSimilarity(hash1: string, hash2: string): number {
-    if (!hash1 || !hash2) return 0
-    
+    if (!hash1 || !hash2) {
+      return 0
+    }
+
     // 简单的字符串相似度计算
     const maxLen = Math.max(hash1.length, hash2.length)
     let matches = 0
-    
+
     for (let i = 0; i < Math.min(hash1.length, hash2.length); i++) {
       if (hash1[i] === hash2[i]) {
         matches++
       }
     }
-    
+
     return matches / maxLen
   }
 
   // 检查是否应该跳过相似内容
   shouldSkipSimilarContent(screenshot: string): boolean {
     const contentHash = this.generateContentHash(screenshot)
-    
+
     // 检查是否与最近的吐槽内容相似
     for (const roast of this.history) {
       if (roast.contentHash) {
@@ -303,7 +309,7 @@ export class RoastHistoryManager {
         }
       }
     }
-    
+
     return false
   }
 
@@ -312,7 +318,7 @@ export class RoastHistoryManager {
     if (screenshot) {
       result.contentHash = this.generateContentHash(screenshot)
     }
-    
+
     this.addRoast(result)
     return true
   }

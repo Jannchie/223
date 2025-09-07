@@ -458,23 +458,19 @@ app.on('activate', () => {
 // eslint-disable-next-line unicorn/prefer-top-level-await
 app.whenReady().then(() => {
   // 处理麦克风权限
-  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     console.log('权限请求:', permission)
-    if (permission === 'microphone' || permission === 'media') {
+    if (permission === 'media') {
       callback(true)
-    }
-    else if (permission === 'camera') {
-      // 如果将来需要摄像头权限
-      callback(false)
     }
     else {
       callback(false)
     }
   })
 
-  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
     console.log('权限检查:', permission, 'Origin:', requestingOrigin)
-    if (permission === 'microphone' || permission === 'media') {
+    if (permission === 'media') {
       return true
     }
     return false
@@ -483,8 +479,9 @@ app.whenReady().then(() => {
   // 设置媒体设备权限
   session.defaultSession.setDevicePermissionHandler((details) => {
     console.log('设备权限请求:', details)
-    if (details.deviceType === 'microphone') {
-      return true
+    // 仅处理 WebHID/WebSerial/WebUSB 等设备权限。麦克风由 'media' 权限控制。
+    if (details.deviceType === 'hid' || details.deviceType === 'serial' || details.deviceType === 'usb') {
+      return false
     }
     return false
   })

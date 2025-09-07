@@ -53,7 +53,7 @@ const title = computed(() => isEditMode.value ? '编辑角色' : '创建角色')
 // 初始化表单数据
 function initFormData() {
   const characterModelPath = props.character?.modelPath || '06-v2.1024/06-v2.model3.json'
-  
+
   formData.value = props.character
     ? {
         name: props.character.name,
@@ -69,20 +69,21 @@ function initFormData() {
         avatar: '',
         description: '',
       }
-  
+
   // 检查是否是预设模型路径
   const isPresetModel = availableModels.value.some(model => model.path === characterModelPath && model.path !== 'custom')
-  
+
   if (!isPresetModel && characterModelPath) {
     // 如果不是预设模型，设置为自定义模式
     isCustomPath.value = true
     customModelPath.value = characterModelPath
     formData.value.modelPath = characterModelPath
-  } else {
+  }
+  else {
     isCustomPath.value = false
     customModelPath.value = characterModelPath
   }
-  
+
   errors.value = {}
 }
 
@@ -156,7 +157,8 @@ watch(() => formData.value.modelPath, (newPath) => {
   if (newPath === 'custom') {
     isCustomPath.value = true
     formData.value.modelPath = customModelPath.value
-  } else {
+  }
+  else {
     isCustomPath.value = false
     customModelPath.value = newPath
   }
@@ -232,22 +234,22 @@ onMounted(() => {
               {{ model.name }}
             </option>
           </select>
-          
+
           <div v-if="isCustomPath" class="custom-path-input">
             <input
               v-model="customModelPath"
               type="text"
               placeholder="输入模型文件路径或URL，如: https://example.com/model.model3.json"
             >
-            <button 
-              type="button" 
-              class="back-to-presets-btn" 
+            <button
+              type="button"
+              class="back-to-presets-btn"
               @click="isCustomPath = false; formData.modelPath = '06-v2.1024/06-v2.model3.json'"
             >
               返回预设
             </button>
           </div>
-          
+
           <div v-if="formData.modelPath" class="model-path-display">
             <small>当前模型路径: {{ formData.modelPath }}</small>
           </div>

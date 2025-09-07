@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { Character } from '../types/chat'
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { characterService } from '../services/character-service'
 
 // Props
@@ -34,13 +34,28 @@ async function loadCharacters() {
   try {
     characters.value = await characterService.getAllCharacters()
 
-    // 找到当前角色
-    if (props.currentCharacterId) {
-      currentCharacter.value = characters.value.find(c => c.id === props.currentCharacterId) || null
+    // 找到当前角色（优先使用传入ID；兼容数字/字符串；不匹配时尝试服务当前角色；最后回退第一个）
+    const findById = (id: string | number | null | undefined) => {
+      if (id === null || id === undefined) return null
+      const sid = String(id)
+      return characters.value.find(c => String((c as any).id) === sid) || null
     }
-    else if (characters.value.length > 0) {
-      currentCharacter.value = characters.value[0]
+
+    let selected: Character | null = null
+    selected = findById(props.currentCharacterId)
+    if (!selected) {
+      try {
+        const svc = await characterService.getCurrentCharacterAsync()
+        selected = findById(svc?.id)
+      }
+      catch {
+        // ignore
+      }
     }
+    if (!selected && characters.value.length > 0) {
+      selected = characters.value[0]
+    }
+    currentCharacter.value = selected
   }
   catch (error) {
     console.error('加载角色列表失败:', error)
@@ -102,6 +117,18 @@ function handleClickOutside(event: Event) {
 onMounted(() => {
   loadCharacters()
   document.addEventListener('click', handleClickOutside)
+})
+
+// 当父组件传入的当前角色ID变化时，同步选中项
+watch(() => props.currentCharacterId, (newId) => {
+  const sid = newId == null ? null : String(newId)
+  if (sid === null) {
+    return
+  }
+  const found = characters.value.find(c => String((c as any).id) === sid) || null
+  if (found) {
+    currentCharacter.value = found
+  }
 })
 
 // 刷新角色列表
