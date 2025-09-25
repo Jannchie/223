@@ -90,7 +90,7 @@ const audioStream = ref<MediaStream | null>(null)
 const lastF6PressTime = ref<number>(0)
 const isRecording = ref(false)
 
-// Pin 状态 - 当pinned为true时，除了pin按钮外的所有交互都被禁用
+// Pin 状态 - 当 pinned 为 true 时，除了 pin 按钮外的所有交互都被禁用
 const isPinned = ref(false)
 
 // 聊天功能集成
@@ -109,7 +109,7 @@ const apiKey = computed({
   get: () => chatConfig.value.apiKey,
   set: (value: string) => updateConfig({ apiKey: value }),
 })
-const baseURL = computed({
+const baseUrl = computed({
   get: () => chatConfig.value.baseURL || 'https://api.openai.com/v1',
   set: (value: string) => updateConfig({ baseURL: value }),
 })
@@ -119,8 +119,8 @@ function setApiKey(v: string) {
   apiKey.value = v
 }
 
-function setBaseURL(v: string) {
-  baseURL.value = v
+function setBaseUrl(v: string) {
+  baseUrl.value = v
 }
 
 // 人设管理相关状态
@@ -363,7 +363,7 @@ function initializeChatService() {
     try {
       updateConfig({
         apiKey: apiKey.value,
-        baseURL: baseURL.value,
+        baseURL: baseUrl.value,
       })
       // 显示欢迎消息，使用当前角色名称
       const characterName = currentCharacter.value?.name || '06娘'
@@ -564,7 +564,7 @@ async function sendAudioMessage(base64Audio: string) {
     // 创建 OpenAI 客户端用于音频转录
     const openai = new OpenAI({
       apiKey: apiKey.value,
-      baseURL: baseURL.value.includes('openai.com') ? undefined : baseURL.value,
+      baseURL: baseUrl.value.includes('openai.com') ? undefined : baseUrl.value,
       dangerouslyAllowBrowser: true, // 允许在浏览器中使用
     })
 
@@ -1777,7 +1777,7 @@ onUnmounted(() => {
     :visible="showSettings"
     :active-tab="activeSettingsTab"
     :api-key="apiKey"
-    :base-u-r-l="baseURL"
+    :base-url="baseUrl"
     :current-character-id="currentCharacter?.id?.toString() || null"
     :character-refresh-key="characterListRefreshKey"
     :roast-config="roastConfig"
@@ -1789,7 +1789,7 @@ onUnmounted(() => {
     :model="model"
     @update:active-tab="switchSettingsTab"
     @update:api-key="setApiKey"
-    @update:base-u-r-l="setBaseURL"
+    @update:base-url="setBaseUrl"
     @character-select="handleCharacterSelect"
     @character-edit="handleCharacterEdit"
     @character-delete="handleCharacterDelete"

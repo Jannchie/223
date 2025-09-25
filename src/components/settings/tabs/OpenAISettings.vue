@@ -1,6 +1,6 @@
 <script setup lang="ts">
-defineProps<{ apiKey: string, baseURL: string }>()
-const emit = defineEmits<{ (e: 'update:apiKey', v: string): void, (e: 'update:baseURL', v: string): void }>()
+defineProps<{ apiKey: string, baseUrl: string }>()
+const emit = defineEmits<{ (e: 'update:apiKey', v: string): void, (e: 'update:baseUrl', v: string): void }>()
 </script>
 
 <template>
@@ -19,11 +19,11 @@ const emit = defineEmits<{ (e: 'update:apiKey', v: string): void, (e: 'update:ba
     <div class="setting-item">
       <label>Base URL:</label>
       <input
-        :value="baseURL"
+        :value="baseUrl"
         type="text"
         placeholder="API 基础地址"
         class="setting-input"
-        @input="emit('update:baseURL', ($event.target as HTMLInputElement).value)"
+        @input="emit('update:baseUrl', ($event.target as HTMLInputElement).value)"
       >
     </div>
   </div>

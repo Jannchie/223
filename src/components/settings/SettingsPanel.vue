@@ -12,7 +12,7 @@ defineProps<{
   activeTab: 'openai' | 'character' | 'roast' | 'recording' | 'gaze'
   // OpenAI
   apiKey: string
-  baseURL: string
+  baseUrl: string
   // Character
   currentCharacterId: string | null
   characterRefreshKey?: number
@@ -34,7 +34,7 @@ const emit = defineEmits<{
   (e: 'save'): void
   (e: 'update:activeTab', tab: 'openai' | 'character' | 'roast' | 'recording' | 'gaze'): void
   (e: 'update:apiKey', v: string): void
-  (e: 'update:baseURL', v: string): void
+  (e: 'update:baseUrl', v: string): void
   // Character
   (e: 'characterSelect', payload: any): void
   (e: 'characterEdit', payload: any): void
@@ -99,9 +99,9 @@ function onOverlayClick() {
           <OpenAISettings
             v-else-if="activeTab === 'openai'"
             :api-key="apiKey"
-            :base-u-r-l="baseURL"
+            :base-url="baseUrl"
             @update:api-key="v => emit('update:apiKey', v)"
-            @update:base-u-r-l="v => emit('update:baseURL', v)"
+            @update:base-url="v => emit('update:baseUrl', v)"
           />
 
           <RoastSettings

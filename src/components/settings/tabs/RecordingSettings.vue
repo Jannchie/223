@@ -10,7 +10,7 @@ const emit = defineEmits<{ (e: 'toggleRecordingWindow'): void }>()
       <label>录制窗口:</label>
       <div class="recording-mode-info">
         <p class="mode-description">
-          {{ isRecordingWindowOpen ? '录制窗口已打开，可供OBS等录制软件捕获' : '录制窗口已关闭' }}
+          {{ isRecordingWindowOpen ? '录制窗口已打开，可供 OBS 等录制软件捕获' : '录制窗口已关闭' }}
         </p>
         <button class="toggle-btn" :class="{ active: isRecordingWindowOpen }" @click="emit('toggleRecordingWindow')">
           {{ isRecordingWindowOpen ? '关闭录制窗口' : '打开录制窗口' }}
@@ -24,7 +24,7 @@ const emit = defineEmits<{ (e: 'toggleRecordingWindow'): void }>()
         <ul>
           <li>主窗口：保持透明，适合日常使用和交互</li>
           <li>录制窗口：独立窗口，带有背景色，专供录制软件捕获</li>
-          <li>两个窗口显示相同的Live2D角色，互不干扰</li>
+          <li>两个窗口显示相同的 Live2D 角色，互不干扰</li>
           <li>可以同时使用主窗口进行交互，用录制窗口进行直播/录制</li>
           <li>也可通过系统托盘右键菜单快速操作</li>
         </ul>
