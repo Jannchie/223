@@ -187,7 +187,7 @@ onMounted(() => {
       <h3>{{ title }}</h3>
       <div class="header-actions">
         <button v-if="isEditMode" class="delete-btn" @click="deleteCharacter">
-          <div class="i-carbon-delete text-16px" />
+          <UIcon name="i-carbon-delete" class="text-16px" />
           删除
         </button>
       </div>
@@ -405,6 +405,8 @@ onMounted(() => {
   padding: 10px 12px;
   border: 1px solid #ddd;
   border-radius: 6px;
+  color: #0f172a;
+  background: #fff;
   font-size: 14px;
   transition: border-color 0.2s ease;
   box-sizing: border-box;

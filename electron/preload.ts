@@ -79,6 +79,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onSetRecordingMode: (callback: (isRecording: boolean) => void) => {
     ipcRenderer.on('set-recording-mode', (_, isRecording) => callback(isRecording))
   },
+
+  // 设置窗口相关 API
+  openSettingsWindow: () => ipcRenderer.invoke('open-settings-window'),
+
+  closeSettingsWindow: () => ipcRenderer.invoke('close-settings-window'),
+
+  getSettingsWindowStatus: () => ipcRenderer.invoke('get-settings-window-status'),
 })
 
 contextBridge.exposeInMainWorld('ipcRenderer', {

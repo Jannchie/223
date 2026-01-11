@@ -1,5 +1,6 @@
 import path from 'node:path'
 import vue from '@vitejs/plugin-vue'
+import ui from '@nuxt/ui/vite'
 import UnoCSS from 'unocss/vite'
 import { defineConfig } from 'vite'
 import electron from 'vite-plugin-electron/simple'
@@ -7,6 +8,7 @@ import electron from 'vite-plugin-electron/simple'
 export default defineConfig({
   plugins: [
     vue(),
+    ui(),
     UnoCSS(),
     electron({
       main: {

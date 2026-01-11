@@ -39,6 +39,7 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 
 
 let win: BrowserWindow | null
 let recordingWin: BrowserWindow | null = null // 录制窗口
+let settingsWin: BrowserWindow | null = null // 设置窗口
 let tray: Tray | null = null
 let mouseTrackingInterval: NodeJS.Timeout | null = null
 let lastMousePosition = { x: -1, y: -1 } // 记录上次鼠标位置
@@ -181,6 +182,7 @@ async function createRecordingWindow() {
     alwaysOnTop: false,
     skipTaskbar: false,
     resizable: true,
+    autoHideMenuBar: true,
     title: 'NiNiSan - 录制窗口',
     backgroundColor: '#f0f0f0',
     icon: path.join(process.env.VITE_PUBLIC, 'icon.png'),
@@ -208,6 +210,51 @@ async function createRecordingWindow() {
   })
 
   return recordingWin
+}
+
+// 创建设置窗口
+async function createSettingsWindow() {
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.focus()
+    return
+  }
+
+  settingsWin = new BrowserWindow({
+    width: 720,
+    height: 760,
+    minWidth: 520,
+    minHeight: 520,
+    transparent: false,
+    frame: true,
+    alwaysOnTop: false,
+    skipTaskbar: false,
+    resizable: true,
+    title: 'NiNiSan - 设置',
+    backgroundColor: '#f5f6f8',
+    icon: path.join(process.env.VITE_PUBLIC, 'icon.png'),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.mjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  })
+
+  if (VITE_DEV_SERVER_URL) {
+    settingsWin.loadURL(`${VITE_DEV_SERVER_URL}?settings=true`)
+  }
+  else {
+    settingsWin.loadFile(path.join(RENDERER_DIST, 'index.html'), {
+      query: { settings: 'true' },
+    })
+  }
+
+  settingsWin.setMenu(null)
+
+  settingsWin.on('closed', () => {
+    settingsWin = null
+  })
+
+  return settingsWin
 }
 
 // 创建系统托盘函数
@@ -652,6 +699,26 @@ function setupIpcHandlers() {
   // 获取录制窗口状态
   ipcMain.handle('get-recording-window-status', () => {
     return recordingWin && !recordingWin.isDestroyed()
+  })
+
+  // 打开设置窗口
+  ipcMain.handle('open-settings-window', async () => {
+    await createSettingsWindow()
+    return !!settingsWin
+  })
+
+  // 关闭设置窗口
+  ipcMain.handle('close-settings-window', () => {
+    if (settingsWin && !settingsWin.isDestroyed()) {
+      settingsWin.close()
+      return true
+    }
+    return false
+  })
+
+  // 获取设置窗口状态
+  ipcMain.handle('get-settings-window-status', () => {
+    return settingsWin && !settingsWin.isDestroyed()
   })
 }
 

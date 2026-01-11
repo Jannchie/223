@@ -114,6 +114,7 @@ const baseURL = computed({
   set: (value: string) => updateConfig({ baseURL: value }),
 })
 const showSettings = ref(false)
+const urlParams = new URLSearchParams(globalThis.location.search)
 
 function setApiKey(v: string) {
   apiKey.value = v
@@ -123,11 +124,37 @@ function setBaseURL(v: string) {
   baseURL.value = v
 }
 
+async function closeSettingsWindow() {
+  if ((globalThis as any).electronAPI?.closeSettingsWindow) {
+    await (globalThis as any).electronAPI.closeSettingsWindow()
+    return
+  }
+  if (typeof window !== 'undefined') {
+    window.close()
+  }
+}
+
+async function openSettingsWindow() {
+  if (isSettingsWindow.value) {
+    showSettings.value = true
+    return
+  }
+  if ((globalThis as any).electronAPI?.openSettingsWindow) {
+    const opened = await (globalThis as any).electronAPI.openSettingsWindow()
+    if (!opened) {
+      showSettings.value = true
+    }
+    return
+  }
+  showSettings.value = true
+}
+
 // 人设管理相关状态
 const currentCharacter = ref<Character | null>(null)
 const activeSettingsTab = ref<'openai' | 'character' | 'roast' | 'recording' | 'gaze'>('openai')
 const isRecordingWindowOpen = ref(false)
 const isInRecordingWindow = ref(false)
+const isSettingsWindow = ref(urlParams.get('settings') === 'true')
 const showCharacterEditor = ref(false)
 const editingCharacter = ref<Character | null>(null)
 
@@ -1024,11 +1051,15 @@ function handleContextMenu(event: MouseEvent) {
   }
   // 在canvas区域内的右键，显示设置面板
   event.preventDefault()
-  showSettings.value = true
+  void openSettingsWindow()
 }
 
 // 保存设置
 function saveSettings() {
+  if (isSettingsWindow.value) {
+    closeSettingsWindow()
+    return
+  }
   initializeChatService()
   showSettings.value = false
   showTemporaryBubble('设置已保存')
@@ -1036,6 +1067,10 @@ function saveSettings() {
 
 // 取消设置
 function cancelSettings() {
+  if (isSettingsWindow.value) {
+    closeSettingsWindow()
+    return
+  }
   showSettings.value = false
 }
 
@@ -1146,6 +1181,11 @@ async function handleCharacterEditorDelete(character: Character) {
 // 切换角色
 async function switchCharacter(character: Character) {
   try {
+    if (isSettingsWindow.value) {
+      await characterService.setCurrentCharacter(character.id)
+      currentCharacter.value = character
+      return
+    }
     // 更新聊天组合式中的当前角色，确保对话使用最新人设
     await chatSetCharacter(character.id)
     // 同步服务层当前角色（兼容其他使用该服务的模块）
@@ -1407,6 +1447,18 @@ function handleResize() {
   windowHeight.value = window.innerHeight
 }
 
+function handleStorageChange(event: StorageEvent) {
+  if (event.key !== 'current-character-id' || !event.newValue) {
+    return
+  }
+  void (async () => {
+    const next = await characterService.getCurrentCharacterAsync()
+    if (next && next.id !== currentCharacter.value?.id) {
+      await switchCharacter(next)
+    }
+  })()
+}
+
 onMounted(async () => {
   // 初始化人设服务并加载当前角色
   try {
@@ -1424,7 +1476,7 @@ onMounted(async () => {
 
   // 获取录制窗口状态
   try {
-  if ((globalThis as any).electronAPI?.getRecordingWindowStatus) {
+    if ((globalThis as any).electronAPI?.getRecordingWindowStatus) {
       isRecordingWindowOpen.value = !!(await (globalThis as any).electronAPI.getRecordingWindowStatus())
     }
   }
@@ -1433,8 +1485,11 @@ onMounted(async () => {
   }
 
   // 检查当前是否为录制窗口
-  const urlParams = new URLSearchParams(globalThis.location.search)
   isInRecordingWindow.value = urlParams.get('recording') === 'true'
+  if (isSettingsWindow.value) {
+    showSettings.value = true
+    return
+  }
 
   // 监听录制模式设置
   if ((globalThis as any).electronAPI?.onSetRecordingMode) {
@@ -1455,6 +1510,7 @@ onMounted(async () => {
   }
 
   window.addEventListener('resize', handleResize)
+  window.addEventListener('storage', handleStorageChange)
 
   // 只在设置面板显示时监听全局鼠标事件
   const watchSettings = () => {
@@ -1649,6 +1705,7 @@ onUnmounted(() => {
   }
   // 清理窗口大小监听器
   window.removeEventListener('resize', handleResize)
+  window.removeEventListener('storage', handleStorageChange)
 
   // 清理定期目光锁定计时器
   stopGazeAtUserTimer()
@@ -1657,6 +1714,7 @@ onUnmounted(() => {
 
 <template>
   <div
+    v-if="!isSettingsWindow"
     class="live2d-container"
     @mousemove="handleMouseMove"
     @mouseover="handleMouseMove"
@@ -1702,16 +1760,16 @@ onUnmounted(() => {
           :title="isPinned ? '取消固定' : '固定位置'"
           @click="togglePin"
         >
-          <div class="i-carbon-pin text-18px" />
+          <UIcon name="i-carbon-pin" class="text-18px" />
         </button>
 
         <!-- 设置按钮 -->
         <button
           class="settings-button"
           title="打开设置"
-          @click="showSettings = true"
+          @click="openSettingsWindow"
         >
-          <div class="i-carbon-settings text-18px" />
+          <UIcon name="i-carbon-settings" class="text-18px" />
         </button>
       </div>
     </div>
@@ -1770,11 +1828,10 @@ onUnmounted(() => {
     </div>
   </div>
 
-  
-
   <!-- 新的设置面板组件 -->
   <SettingsPanel
     :visible="showSettings"
+    :embedded="isSettingsWindow"
     :active-tab="activeSettingsTab"
     :api-key="apiKey"
     :base-u-r-l="baseURL"
@@ -1876,10 +1933,16 @@ onUnmounted(() => {
   border-radius: 12px;
   font-size: 14px;
   background: rgba(255, 255, 255, 0.9);
+  color: #0f172a;
+  caret-color: #0f172a;
   outline: none;
   -webkit-app-region: no-drag;
   pointer-events: auto;
   box-sizing: border-box;
+}
+
+.text-input::placeholder {
+  color: #64748b;
 }
 
 .text-input:focus {
@@ -1907,6 +1970,7 @@ onUnmounted(() => {
   border: none;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.9);
+  color: #0f172a;
   font-size: 16px;
   cursor: pointer;
   display: flex;
@@ -1940,6 +2004,7 @@ onUnmounted(() => {
   border: none;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.9);
+  color: #0f172a;
   font-size: 16px;
   cursor: pointer;
   display: flex;

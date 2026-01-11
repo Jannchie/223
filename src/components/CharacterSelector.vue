@@ -167,18 +167,18 @@ defineExpose({
             {{ currentCharacter.description }}
           </div>
         </div>
-      </div>
-      <div class="dropdown-arrow" :class="{ open: showDropdown }">
-        <div class="i-carbon-chevron-down text-14px" />
-      </div>
     </div>
+    <div class="dropdown-arrow" :class="{ open: showDropdown }">
+      <UIcon name="i-carbon-chevron-down" class="text-14px" />
+    </div>
+  </div>
 
     <!-- 下拉菜单 -->
     <div v-if="showDropdown" class="dropdown-menu">
       <div class="menu-header">
         <span>选择角色</span>
         <button class="create-btn" title="创建新角色" @click="createCharacter">
-          <div class="i-carbon-add text-16px" />
+          <UIcon name="i-carbon-add" class="text-16px" />
         </button>
       </div>
 
@@ -216,21 +216,21 @@ defineExpose({
           </div>
 
           <div class="character-actions">
-            <button
-              class="action-btn edit-btn"
-              title="编辑"
-              @click="editCharacter(character, $event)"
-            >
-              <div class="i-carbon-edit text-14px" />
-            </button>
-            <button
-              v-if="characters.length > 1"
-              class="action-btn delete-btn"
-              title="删除"
-              @click="deleteCharacter(character, $event)"
-            >
-              <div class="i-carbon-delete text-14px" />
-            </button>
+          <button
+            class="action-btn edit-btn"
+            title="编辑"
+            @click="editCharacter(character, $event)"
+          >
+            <UIcon name="i-carbon-edit" class="text-14px" />
+          </button>
+          <button
+            v-if="characters.length > 1"
+            class="action-btn delete-btn"
+            title="删除"
+            @click="deleteCharacter(character, $event)"
+          >
+            <UIcon name="i-carbon-delete" class="text-14px" />
+          </button>
           </div>
         </div>
       </div>

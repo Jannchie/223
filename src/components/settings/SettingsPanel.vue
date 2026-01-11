@@ -9,6 +9,7 @@ import RoastSettings from './tabs/RoastSettings.vue'
 
 defineProps<{
   visible: boolean
+  embedded?: boolean
   activeTab: 'openai' | 'character' | 'roast' | 'recording' | 'gaze'
   // OpenAI
   apiKey: string
@@ -63,7 +64,7 @@ function onOverlayClick() {
 </script>
 
 <template>
-  <teleport to="body">
+  <teleport v-if="!embedded" to="body">
     <div v-if="visible" class="settings-overlay" @click="onOverlayClick">
       <div class="settings-panel" @click.stop @keydown.stop @keyup.stop @keypress.stop>
         <!-- tabs -->
@@ -143,6 +144,85 @@ function onOverlayClick() {
       </div>
     </div>
   </teleport>
+
+  <div v-else-if="visible" class="settings-window" @keydown.stop @keyup.stop @keypress.stop>
+    <div class="settings-panel">
+      <!-- tabs -->
+      <div class="settings-tabs">
+        <button class="tab-button" :class="{ active: activeTab === 'character' }" @click="switchTab('character')">
+          角色管理
+        </button>
+        <button class="tab-button" :class="{ active: activeTab === 'openai' }" @click="switchTab('openai')">
+          OpenAI 设置
+        </button>
+        <button class="tab-button" :class="{ active: activeTab === 'roast' }" @click="switchTab('roast')">
+          截图吐槽
+        </button>
+        <button class="tab-button" :class="{ active: activeTab === 'recording' }" @click="switchTab('recording')">
+          录制窗口
+        </button>
+        <button class="tab-button" :class="{ active: activeTab === 'gaze' }" @click="switchTab('gaze')">
+          目光跟踪
+        </button>
+      </div>
+
+      <div class="tab-body">
+        <CharacterSettings
+          v-if="activeTab === 'character'"
+          :current-character-id="currentCharacterId"
+          :refresh-key="characterRefreshKey ?? 0"
+          @select="e => emit('characterSelect', e)"
+          @edit="e => emit('characterEdit', e)"
+          @delete="e => emit('characterDelete', e)"
+          @create="() => emit('characterCreate')"
+        />
+
+        <OpenAISettings
+          v-else-if="activeTab === 'openai'"
+          :api-key="apiKey"
+          :base-u-r-l="baseURL"
+          @update:api-key="v => emit('update:apiKey', v)"
+          @update:base-u-r-l="v => emit('update:baseURL', v)"
+        />
+
+        <RoastSettings
+          v-else-if="activeTab === 'roast'"
+          :roast-config="roastConfig"
+          :is-roasting="isRoasting"
+          :current-roast="currentRoast"
+          :roast-history="roastHistory"
+          @toggle-auto="() => emit('roastToggleAuto')"
+          @set-interval="m => emit('roastSetInterval', m)"
+          @set-style="s => emit('roastSetStyle', s)"
+          @trigger="() => emit('roastTrigger')"
+          @clear-history="() => emit('roastClearHistory')"
+        />
+
+        <RecordingSettings
+          v-else-if="activeTab === 'recording'"
+          :is-recording-window-open="isRecordingWindowOpen"
+          @toggle-recording-window="() => emit('recordingToggle')"
+        />
+
+        <GazeSettings
+          v-else
+          :gaze-config="gazeAtUserConfig"
+          :model="model"
+          @update-config="cfg => emit('gazeUpdateConfig', cfg)"
+          @test-lock="() => emit('gazeTestLock')"
+        />
+      </div>
+
+      <div class="setting-actions">
+        <button class="save-btn" @click="$emit('save')">
+          保存
+        </button>
+        <button class="cancel-btn" @click="$emit('cancel')">
+          关闭
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <style scoped>
@@ -175,6 +255,24 @@ function onOverlayClick() {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.settings-window {
+  width: 100vw;
+  height: 100vh;
+  background: #f5f6f8;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.settings-window .settings-panel {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+  background: #fff;
 }
 
 .settings-tabs {
