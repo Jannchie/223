@@ -92,6 +92,7 @@ const isRecording = ref(false)
 
 // Pin 状态 - 当pinned为true时，除了pin按钮外的所有交互都被禁用
 const isPinned = ref(false)
+const isHoveringModel = ref(false)
 
 // 聊天功能集成
 const {
@@ -109,6 +110,7 @@ const apiKey = computed({
   get: () => chatConfig.value.apiKey,
   set: (value: string) => updateConfig({ apiKey: value }),
 })
+const controlsVisible = computed(() => (isPinned.value ? isHoveringModel.value : isInputVisible.value))
 const baseURL = computed({
   get: () => chatConfig.value.baseURL || 'https://api.openai.com/v1',
   set: (value: string) => updateConfig({ baseURL: value }),
@@ -151,9 +153,7 @@ async function openSettingsWindow() {
 
 // 人设管理相关状态
 const currentCharacter = ref<Character | null>(null)
-const activeSettingsTab = ref<'openai' | 'character' | 'roast' | 'recording' | 'gaze'>('openai')
-const isRecordingWindowOpen = ref(false)
-const isInRecordingWindow = ref(false)
+const activeSettingsTab = ref<'openai' | 'character' | 'roast' | 'gaze'>('openai')
 const isSettingsWindow = ref(urlParams.get('settings') === 'true')
 const showCharacterEditor = ref(false)
 const editingCharacter = ref<Character | null>(null)
@@ -922,6 +922,7 @@ function handleMouseMove(event: MouseEvent) {
   // 更新鼠标位置
   mouseX.value = event.clientX
   mouseY.value = event.clientY
+  isHoveringModel.value = isPointInCanvas(event.clientX, event.clientY)
 
   // 检查是否应该显示输入框和控制鼠标穿透
   const shouldShowInput = checkMouseInInteractiveArea(event.clientX, event.clientY)
@@ -973,6 +974,7 @@ function handleMouseUp(_: MouseEvent) {
 // 鼠标离开处理
 function handleMouseLeave() {
   isInputVisible.value = false
+  isHoveringModel.value = false
   // 鼠标完全离开应用区域时，恢复完全穿透
   setMouseEventTransparency(true)
 }
@@ -1066,6 +1068,14 @@ function cancelSettings() {
 // 切换Pin状态
 function togglePin() {
   isPinned.value = !isPinned.value
+  if (!isPinned.value) {
+    isHoveringModel.value = false
+    return
+  }
+  isInputVisible.value = false
+  isInputFocused.value = false
+  const inputElement = document.querySelector('.text-input [data-slot="base"]') as HTMLInputElement | null
+  inputElement?.blur()
 }
 
 // 获取模型文件路径（支持本地和远程URL）
@@ -1215,47 +1225,8 @@ async function loadLive2DModel(modelPath: string) {
   }
 }
 
-function switchSettingsTab(tab: 'openai' | 'character' | 'roast' | 'recording' | 'gaze') {
+function switchSettingsTab(tab: 'openai' | 'character' | 'roast' | 'gaze') {
   activeSettingsTab.value = tab
-}
-
-// 打开录制窗口
-async function openRecordingWindow() {
-  try {
-    if ((globalThis as any).electronAPI?.openRecordingWindow) {
-      const success = await (globalThis as any).electronAPI.openRecordingWindow()
-      if (success) {
-        isRecordingWindowOpen.value = true
-        showTemporaryBubble('录制窗口已打开')
-      }
-    }
-  }
-  catch (error) {
-    console.error('打开录制窗口失败:', error)
-    showTemporaryBubble('打开录制窗口失败')
-  }
-}
-
-// 关闭录制窗口
-async function closeRecordingWindow() {
-  try {
-    if ((globalThis as any).electronAPI?.closeRecordingWindow) {
-      const success = await (globalThis as any).electronAPI.closeRecordingWindow()
-      if (success) {
-        isRecordingWindowOpen.value = false
-        showTemporaryBubble('录制窗口已关闭')
-      }
-    }
-  }
-  catch (error) {
-    console.error('关闭录制窗口失败:', error)
-    showTemporaryBubble('关闭录制窗口失败')
-  }
-}
-
-// 切换录制窗口
-async function toggleRecordingWindow() {
-  await (isRecordingWindowOpen.value ? closeRecordingWindow() : openRecordingWindow())
 }
 
 // 初始化截图吐槽管理器
@@ -1436,15 +1407,35 @@ function handleResize() {
   windowHeight.value = window.innerHeight
 }
 
+const CHARACTER_ID_KEY = 'current-character-id'
+const CHARACTER_SYNC_KEYS = new Set([CHARACTER_ID_KEY, 'current-character-updated-at'])
+
+function getStoredCharacterId(): string | null {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem(CHARACTER_ID_KEY)
+    }
+  }
+  catch {
+    // ignore
+  }
+  return null
+}
+
 function handleStorageChange(event: StorageEvent) {
-  if (event.key !== 'current-character-id' || !event.newValue) {
+  if (!event.key || !CHARACTER_SYNC_KEYS.has(event.key)) {
+    return
+  }
+  const targetId = event.key === CHARACTER_ID_KEY ? event.newValue : getStoredCharacterId()
+  if (!targetId) {
     return
   }
   void (async () => {
-    const next = await characterService.getCurrentCharacterAsync()
-    if (next && next.id !== currentCharacter.value?.id) {
-      await switchCharacter(next)
+    const next = await characterService.getCharacter(targetId)
+    if (!next) {
+      return
     }
+    await switchCharacter(next)
   })()
 }
 
@@ -1463,28 +1454,9 @@ onMounted(async () => {
     initializeChatService()
   }
 
-  // 获取录制窗口状态
-  try {
-    if ((globalThis as any).electronAPI?.getRecordingWindowStatus) {
-      isRecordingWindowOpen.value = !!(await (globalThis as any).electronAPI.getRecordingWindowStatus())
-    }
-  }
-  catch (error) {
-    console.error('获取录制窗口状态失败:', error)
-  }
-
-  // 检查当前是否为录制窗口
-  isInRecordingWindow.value = urlParams.get('recording') === 'true'
   if (isSettingsWindow.value) {
     showSettings.value = true
     return
-  }
-
-  // 监听录制模式设置
-  if ((globalThis as any).electronAPI?.onSetRecordingMode) {
-    (globalThis as any).electronAPI.onSetRecordingMode((isRecording: boolean) => {
-      isInRecordingWindow.value = isRecording
-    })
   }
 
   // 初始化截图吐槽管理器
@@ -1606,6 +1578,9 @@ onMounted(async () => {
       if (!isInputFocused.value && !isGazingAtUser.value) {
         setGazeTarget(position.x, position.y)
       }
+      if (isPinned.value) {
+        isHoveringModel.value = isPointInCanvas(position.x, position.y)
+      }
     })
   }
 
@@ -1635,16 +1610,6 @@ onMounted(async () => {
     () => model,
   )
 
-  // 同步录制窗口状态（防止出现 null/undefined）
-  if ((globalThis as any).electronAPI?.getRecordingWindowStatus) {
-    try {
-      const status = await (globalThis as any).electronAPI.getRecordingWindowStatus()
-      isRecordingWindowOpen.value = !!status
-    }
-    catch {
-      isRecordingWindowOpen.value = false
-    }
-  }
 })
 
 // 组件卸载时清理事件监听器
@@ -1705,6 +1670,7 @@ onUnmounted(() => {
   <div
     v-if="!isSettingsWindow"
     class="live2d-container"
+    :class="{ 'pinned-hover': isPinned && isHoveringModel }"
     @mousemove="handleMouseMove"
     @mouseover="handleMouseMove"
     @mouseout="handleMouseMove"
@@ -1718,7 +1684,7 @@ onUnmounted(() => {
     <canvas id="canvas" />
     <div
       class="input-container"
-      :class="{ 'input-visible': isInputVisible }"
+      :class="{ 'input-visible': controlsVisible }"
       :style="{
         'left': `${canvasX}px`,
         'top': `${canvasY + inputPositionY}px`,
@@ -1731,6 +1697,7 @@ onUnmounted(() => {
         type="text"
         :placeholder="isTyping ? '正在思考...' : '请输入内容（回车发送）...'"
         class="text-input"
+        :class="{ 'input-hidden': isPinned }"
         :disabled="isTyping"
         @focus="handleInputFocus"
         @blur="handleInputBlur"
@@ -1757,6 +1724,7 @@ onUnmounted(() => {
 
         <!-- 设置按钮 -->
         <UButton
+          v-if="!isPinned"
           class="settings-button"
           title="打开设置"
           variant="ghost"
@@ -1836,9 +1804,7 @@ onUnmounted(() => {
     :is-roasting="isRoasting"
     :current-roast="currentRoast"
     :roast-history="roastHistory"
-    :is-recording-window-open="!!isRecordingWindowOpen"
     :gaze-at-user-config="gazeAtUserConfig"
-    :model="model"
     @update:active-tab="switchSettingsTab"
     @update:api-key="setApiKey"
     @update:base-u-r-l="setBaseURL"
@@ -1851,9 +1817,8 @@ onUnmounted(() => {
     @roast-set-style="setRoastStyle"
     @roast-trigger="triggerManualRoast"
     @roast-clear-history="clearRoastHistory"
-    @recording-toggle="toggleRecordingWindow"
     @gaze-update-config="updateGazeAtUserConfig"
-    @gaze-test-lock="() => startGazeAtUser(model)"
+    @gaze-test-lock="() => startGazeAtUser(modelRef.value)"
     @save="saveSettings"
     @cancel="cancelSettings"
   />
@@ -1897,6 +1862,11 @@ onUnmounted(() => {
   -webkit-app-region: no-drag;
   pointer-events: auto;
   /* 位置和尺寸通过JavaScript动态设置 */
+  transition: opacity 0.2s ease;
+}
+
+.live2d-container.pinned-hover #canvas {
+  opacity: 0.15;
 }
 
 .input-container {
@@ -1926,6 +1896,11 @@ onUnmounted(() => {
 
 .text-input {
   width: 100%;
+}
+
+.text-input.input-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 :deep(.text-input [data-slot="base"]) {
@@ -2241,7 +2216,6 @@ onUnmounted(() => {
   /* 设置面板响应式样式由 SettingsPanel 组件提供 */
 }
 
-/* 录制模式样式已迁移至 RecordingSettings 组件 */
 
 /* 目光跟踪设置样式已迁移至 GazeSettings 组件 */
 </style>

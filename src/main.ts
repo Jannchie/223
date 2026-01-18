@@ -5,7 +5,7 @@ import App from './App.vue'
 import './style.css'
 
 const urlParams = new URLSearchParams(globalThis.location.search)
-const isOverlayWindow = !(urlParams.get('settings') === 'true' || urlParams.get('recording') === 'true')
+const isOverlayWindow = urlParams.get('settings') !== 'true'
 if (typeof document !== 'undefined') {
   document.documentElement.classList.toggle('overlay-window', isOverlayWindow)
   document.body.classList.toggle('overlay-window', isOverlayWindow)

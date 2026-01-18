@@ -1,7 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-
-const props = defineProps<{ gazeConfig: any, model: any | null }>()
+const props = defineProps<{ gazeConfig: any }>()
 const emit = defineEmits<{ (e: 'updateConfig', cfg: any): void, (e: 'testLock'): void }>()
 
 const intervalOptions = [
@@ -22,15 +20,6 @@ const durationOptions = [
   { label: '10 秒', value: 10 },
 ]
 
-const statusInfo = computed(() => {
-  if (!props.model) {
-    return { label: '未加载模型', color: 'neutral' }
-  }
-  if (!(props.model as any).setEyesAlwaysLookAtCamera) {
-    return { label: '模型不支持目光锁定', color: 'warning' }
-  }
-  return { label: '已就绪', color: 'primary' }
-})
 </script>
 
 <template>
@@ -82,17 +71,8 @@ const statusInfo = computed(() => {
       />
     </UFormField>
 
-    <UCard variant="soft">
-      <template #header>
-        <div class="font-medium">模型状态</div>
-      </template>
-      <UBadge :color="statusInfo.color" variant="soft">
-        {{ statusInfo.label }}
-      </UBadge>
-    </UCard>
-
     <UButton
-      :disabled="!model || !(model as any).setEyesAlwaysLookAtCamera || !gazeConfig.enabled"
+      :disabled="!gazeConfig.enabled"
       color="primary"
       @click="emit('testLock')"
     >

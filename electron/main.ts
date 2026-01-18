@@ -38,7 +38,6 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null
-let recordingWin: BrowserWindow | null = null // 录制窗口
 let settingsWin: BrowserWindow | null = null // 设置窗口
 let tray: Tray | null = null
 let mouseTrackingInterval: NodeJS.Timeout | null = null
@@ -165,51 +164,6 @@ async function createWindow() {
 
   // 创建系统托盘
   createTray()
-}
-
-// 创建录制窗口
-async function createRecordingWindow() {
-  if (recordingWin && !recordingWin.isDestroyed()) {
-    recordingWin.focus()
-    return
-  }
-
-  recordingWin = new BrowserWindow({
-    width: 800,
-    height: 600,
-    transparent: false,
-    frame: true,
-    alwaysOnTop: false,
-    skipTaskbar: false,
-    resizable: true,
-    autoHideMenuBar: true,
-    title: 'NiNiSan - 录制窗口',
-    backgroundColor: '#f0f0f0',
-    icon: path.join(process.env.VITE_PUBLIC, 'icon.png'),
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
-      nodeIntegration: false,
-      contextIsolation: true,
-    },
-  })
-
-  // 加载相同的页面，但传递录制模式参数
-  if (VITE_DEV_SERVER_URL) {
-    recordingWin.loadURL(`${VITE_DEV_SERVER_URL}?recording=true`)
-  }
-  else {
-    recordingWin.loadFile(path.join(RENDERER_DIST, 'index.html'))
-    // 在生产模式下通过postMessage传递参数
-    recordingWin.webContents.once('did-finish-load', () => {
-      recordingWin?.webContents.send('set-recording-mode', true)
-    })
-  }
-
-  recordingWin.on('closed', () => {
-    recordingWin = null
-  })
-
-  return recordingWin
 }
 
 // 创建设置窗口
@@ -357,23 +311,11 @@ function createTray() {
     {
       type: 'separator',
     },
-    {
-      label: recordingWin && !recordingWin.isDestroyed() ? '关闭录制窗口' : '打开录制窗口',
-      type: 'normal',
-      click: () => {
-        if (recordingWin && !recordingWin.isDestroyed()) {
-          recordingWin.close()
-        }
-        else {
-          createRecordingWindow()
-        }
-      },
-    },
-    {
-      label: '退出',
-      type: 'normal',
-      click: () => {
-        app.quit()
+      {
+        label: '退出',
+        type: 'normal',
+        click: () => {
+          app.quit()
       },
     },
   ])
@@ -710,26 +652,6 @@ function setupIpcHandlers() {
       enabled: screenshotRoastEnabled,
       interval: screenshotRoastInterval / 60 / 1000, // 转换为分钟
     }
-  })
-
-  // 打开录制窗口
-  ipcMain.handle('open-recording-window', async () => {
-    await createRecordingWindow()
-    return !!recordingWin
-  })
-
-  // 关闭录制窗口
-  ipcMain.handle('close-recording-window', () => {
-    if (recordingWin && !recordingWin.isDestroyed()) {
-      recordingWin.close()
-      return true
-    }
-    return false
-  })
-
-  // 获取录制窗口状态
-  ipcMain.handle('get-recording-window-status', () => {
-    return recordingWin && !recordingWin.isDestroyed()
   })
 
   // 打开设置窗口

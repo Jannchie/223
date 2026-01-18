@@ -69,17 +69,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('hotkey-voice-recognition')
   },
 
-  // 录制窗口相关 API
-  openRecordingWindow: () => ipcRenderer.invoke('open-recording-window'),
-
-  closeRecordingWindow: () => ipcRenderer.invoke('close-recording-window'),
-
-  getRecordingWindowStatus: () => ipcRenderer.invoke('get-recording-window-status'),
-
-  onSetRecordingMode: (callback: (isRecording: boolean) => void) => {
-    ipcRenderer.on('set-recording-mode', (_, isRecording) => callback(isRecording))
-  },
-
   // 设置窗口相关 API
   openSettingsWindow: () => ipcRenderer.invoke('open-settings-window'),
 

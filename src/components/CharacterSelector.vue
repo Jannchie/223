@@ -33,7 +33,6 @@ const selectItems = computed(() => {
     label: character.name,
     value: String((character as any).id),
     description: character.description || undefined,
-    avatar: character.avatar ? { src: character.avatar, alt: character.name } : undefined,
   }))
 })
 
@@ -44,7 +43,9 @@ async function loadCharacters() {
     characters.value = await characterService.getAllCharacters()
 
     const findById = (id: string | number | null | undefined) => {
-      if (id === null || id === undefined) return null
+      if (id === null || id === undefined) {
+        return null
+      }
       const sid = String(id)
       return characters.value.find(c => String((c as any).id) === sid) || null
     }
@@ -145,10 +146,11 @@ defineExpose({
 </script>
 
 <template>
-  <div class="character-selector">
+  <div class="flex flex-col gap-4">
     <UFormField label="当前角色">
       <USelect
         v-model="selectedId"
+        class="min-w-80"
         :items="selectItems"
         :disabled="loading"
         placeholder="选择角色"
@@ -156,7 +158,7 @@ defineExpose({
       />
     </UFormField>
 
-    <div class="selector-actions">
+    <div class="flex gap-2 flex-wrap">
       <UButton color="primary" size="sm" icon="i-carbon-add" @click="handleCreate">
         新建角色
       </UButton>
@@ -183,17 +185,3 @@ defineExpose({
     </div>
   </div>
 </template>
-
-<style scoped>
-.character-selector {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.selector-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-</style>

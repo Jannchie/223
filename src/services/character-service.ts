@@ -75,6 +75,7 @@ class CharacterServiceImpl implements CharacterService {
   private currentCharacterId: string | null = null
   private initialized = false
   private readonly CURRENT_ID_KEY = 'current-character-id'
+  private readonly CURRENT_UPDATED_KEY = 'current-character-updated-at'
 
   constructor() {
     this._initialize()
@@ -218,6 +219,10 @@ class CharacterServiceImpl implements CharacterService {
     const updated = await repositories.characters.update(id, updates)
     if (!updated) {
       throw new Error(`角色 ${id} 不存在`)
+    }
+
+    if (this.currentCharacterId && String(this.currentCharacterId) === String(id)) {
+      this.touchStoredCurrentCharacter()
     }
 
     return updated
@@ -447,6 +452,17 @@ class CharacterServiceImpl implements CharacterService {
         else {
           localStorage.removeItem(this.CURRENT_ID_KEY)
         }
+      }
+    }
+    catch {
+      // ignore
+    }
+  }
+
+  private touchStoredCurrentCharacter(): void {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(this.CURRENT_UPDATED_KEY, String(Date.now()))
       }
     }
     catch {

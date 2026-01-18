@@ -5,13 +5,12 @@ import { computed } from 'vue'
 import CharacterSettings from './tabs/CharacterSettings.vue'
 import GazeSettings from './tabs/GazeSettings.vue'
 import OpenAISettings from './tabs/OpenAISettings.vue'
-import RecordingSettings from './tabs/RecordingSettings.vue'
 import RoastSettings from './tabs/RoastSettings.vue'
 
 const props = defineProps<{
   visible: boolean
   embedded?: boolean
-  activeTab: 'openai' | 'character' | 'roast' | 'recording' | 'gaze'
+  activeTab: 'openai' | 'character' | 'roast' | 'gaze'
   // OpenAI
   apiKey: string
   baseURL: string
@@ -23,18 +22,15 @@ const props = defineProps<{
   isRoasting: boolean
   currentRoast: RoastResult | null
   roastHistory: RoastResult[]
-  // Recording
-  isRecordingWindowOpen: boolean
   // Gaze
   gazeAtUserConfig: any
-  model: any | null
 }>()
 
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'cancel'): void
   (e: 'save'): void
-  (e: 'update:activeTab', tab: 'openai' | 'character' | 'roast' | 'recording' | 'gaze'): void
+  (e: 'update:activeTab', tab: 'openai' | 'character' | 'roast' | 'gaze'): void
   (e: 'update:apiKey', v: string): void
   (e: 'update:baseURL', v: string): void
   // Character
@@ -48,8 +44,6 @@ const emit = defineEmits<{
   (e: 'roastSetStyle', style: RoastStyle): void
   (e: 'roastTrigger'): void
   (e: 'roastClearHistory'): void
-  // Recording
-  (e: 'recordingToggle'): void
   // Gaze
   (e: 'gazeUpdateConfig', cfg: any): void
   (e: 'gazeTestLock'): void
@@ -59,7 +53,6 @@ const tabItems = [
   { label: '角色管理', value: 'character', icon: 'i-carbon-user' },
   { label: 'OpenAI 设置', value: 'openai', icon: 'i-carbon-application' },
   { label: '截图吐槽', value: 'roast', icon: 'i-carbon-chat' },
-  { label: '录制窗口', value: 'recording', icon: 'i-carbon-video' },
   { label: '目光跟踪', value: 'gaze', icon: 'i-carbon-view' },
 ]
 
@@ -120,16 +113,9 @@ function handleModalOpenChange(open: boolean) {
                 @clear-history="() => emit('roastClearHistory')"
               />
 
-              <RecordingSettings
-                v-else-if="item.value === 'recording'"
-                :is-recording-window-open="isRecordingWindowOpen"
-                @toggle-recording-window="() => emit('recordingToggle')"
-              />
-
               <GazeSettings
                 v-else
                 :gaze-config="gazeAtUserConfig"
-                :model="model"
                 @update-config="cfg => emit('gazeUpdateConfig', cfg)"
                 @test-lock="() => emit('gazeTestLock')"
               />
@@ -196,16 +182,9 @@ function handleModalOpenChange(open: boolean) {
               @clear-history="() => emit('roastClearHistory')"
             />
 
-            <RecordingSettings
-              v-else-if="item.value === 'recording'"
-              :is-recording-window-open="isRecordingWindowOpen"
-              @toggle-recording-window="() => emit('recordingToggle')"
-            />
-
             <GazeSettings
               v-else
               :gaze-config="gazeAtUserConfig"
-              :model="model"
               @update-config="cfg => emit('gazeUpdateConfig', cfg)"
               @test-lock="() => emit('gazeTestLock')"
             />
