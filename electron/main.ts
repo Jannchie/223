@@ -250,6 +250,37 @@ async function createSettingsWindow() {
 
   settingsWin.setMenu(null)
 
+  settingsWin.webContents.on('before-input-event', (_, input) => {
+    if (input.key === 'F12' || (input.control && input.shift && input.key === 'I')) {
+      settingsWin?.webContents.openDevTools({ mode: 'detach' })
+    }
+  })
+
+  settingsWin.webContents.on('context-menu', (_, params) => {
+    if (!settingsWin) {
+      return
+    }
+    const template = [
+      { role: 'cut', enabled: params.editFlags.canCut },
+      { role: 'copy', enabled: params.editFlags.canCopy },
+      { role: 'paste', enabled: params.editFlags.canPaste },
+    ] as Electron.MenuItemConstructorOptions[]
+
+    if (VITE_DEV_SERVER_URL) {
+      template.push({ type: 'separator' })
+      template.push({
+        label: 'Inspect Element',
+        click: () => settingsWin?.webContents.inspectElement(params.x, params.y),
+      })
+      template.push({
+        label: 'Toggle DevTools',
+        click: () => settingsWin?.webContents.openDevTools({ mode: 'detach' }),
+      })
+    }
+
+    Menu.buildFromTemplate(template).popup({ window: settingsWin })
+  })
+
   settingsWin.on('closed', () => {
     settingsWin = null
   })

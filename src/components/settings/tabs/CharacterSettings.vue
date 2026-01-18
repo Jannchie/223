@@ -11,8 +11,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="tab-content">
-    <h3>角色管理</h3>
+  <div>
     <CharacterSelector
       :key="refreshKey ?? 0"
       :current-character-id="currentCharacterId"
@@ -24,6 +23,3 @@ const emit = defineEmits<{
   </div>
 </template>
 
-<style scoped>
-.tab-content { padding: 4px 2px; }
-</style>

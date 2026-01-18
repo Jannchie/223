@@ -3,6 +3,7 @@
   "type": "module",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "pnpm@10.26.2+sha512.0e308ff2005fc7410366f154f625f6631ab2b16b1d2e70238444dd6ae9d630a8482d92a451144debc492416896ed16f7b114a86ec68b8404b2443869e68ffda6",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -10,14 +11,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.9",
-    "@ai-sdk/cohere": "^3.0.4",
-    "@ai-sdk/google": "^3.0.6",
-    "@ai-sdk/openai": "^3.0.7",
-    "@jannchie/pixi-live2d-display": "^1.1.2",
+    "@ai-sdk/anthropic": "^3.0.15",
+    "@ai-sdk/cohere": "^3.0.8",
+    "@ai-sdk/google": "^3.0.10",
+    "@ai-sdk/openai": "^3.0.12",
+    "@jannchie/pixi-live2d-display": "^1.2.0",
     "@nuxt/ui": "^4.3.0",
+    "@unhead/vue": "^2.1.2",
     "@vueuse/core": "^14.1.0",
-    "ai": "^6.0.27",
+    "ai": "^6.0.39",
     "dexie": "^4.2.1",
     "openai": "^6.16.0",
     "path-browserify": "^1.0.1",
@@ -28,22 +30,19 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
-    "@iconify/json": "^2.2.427",
+    "@iconify/json": "^2.2.429",
     "@jannchie/eslint-config": "^3.7.5",
     "@tailwindcss/vite": "^4.1.18",
-    "@types/node": "^25.0.6",
-    "@unocss/eslint-plugin": "^66.5.12",
+    "@types/node": "^25.0.9",
     "@vitejs/plugin-vue": "^6.0.3",
-    "electron": "^39.2.7",
+    "electron": "^40.0.0",
     "electron-builder": "^26.4.0",
     "eslint": "^9.39.2",
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3",
-    "unocss": "^66.5.12",
     "vite": "^7.3.1",
     "vite-plugin-electron": "^0.29.0",
     "vite-plugin-electron-renderer": "^0.14.6",
     "vue-tsc": "^3.2.2"
-  },
-  "packageManager": "pnpm@10.26.2+sha512.0e308ff2005fc7410366f154f625f6631ab2b16b1d2e70238444dd6ae9d630a8482d92a451144debc492416896ed16f7b114a86ec68b8404b2443869e68ffda6"
+  }
 }

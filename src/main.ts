@@ -1,9 +1,15 @@
+import ui from '@nuxt/ui/vue-plugin'
 import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
-import ui from '@nuxt/ui/vue-plugin'
 import App from './App.vue'
 import './style.css'
-import 'virtual:uno.css'
+
+const urlParams = new URLSearchParams(globalThis.location.search)
+const isOverlayWindow = !(urlParams.get('settings') === 'true' || urlParams.get('recording') === 'true')
+if (typeof document !== 'undefined') {
+  document.documentElement.classList.toggle('overlay-window', isOverlayWindow)
+  document.body.classList.toggle('overlay-window', isOverlayWindow)
+}
 
 const app = createApp(App)
 const router = createRouter({

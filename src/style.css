@@ -4,11 +4,14 @@
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
+}
+
+html.overlay-window,
+body.overlay-window {
   background: transparent;
 }
 
-html {
-  background: transparent;
+body.overlay-window {
+  display: flex;
+  place-items: center;
 }

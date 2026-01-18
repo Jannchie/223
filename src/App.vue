@@ -3,9 +3,9 @@ import SimpleLive2DViewer from './components/SimpleLive2DViewer.vue'
 </script>
 
 <template>
-  <div class="app-container">
+  <UApp class="app-container">
     <SimpleLive2DViewer />
-  </div>
+  </UApp>
 </template>
 
 <style scoped>

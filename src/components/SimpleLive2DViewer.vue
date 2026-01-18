@@ -129,7 +129,7 @@ async function closeSettingsWindow() {
     await (globalThis as any).electronAPI.closeSettingsWindow()
     return
   }
-  if (typeof window !== 'undefined') {
+  if (globalThis.window !== undefined) {
     window.close()
   }
 }
@@ -438,7 +438,7 @@ async function sendMessage() {
 
     // AI 回复完成后自动聚焦到输入框
     setTimeout(() => {
-      const inputElement = document.querySelector('.text-input') as HTMLInputElement
+      const inputElement = document.querySelector('.text-input [data-slot="base"]') as HTMLInputElement
       if (inputElement) {
         inputElement.focus()
         // 确保输入框可见
@@ -1010,18 +1010,7 @@ function isPointInInput(clientX: number, clientY: number): boolean {
 
 // 检查点击是否在设置面板区域内
 function isPointInSettings(clientX: number, clientY: number): boolean {
-  if (!showSettings.value) {
-    return false
-  }
-
-  const settingsOverlay = document.querySelector('.settings-overlay') as HTMLElement
-  if (!settingsOverlay) {
-    return false
-  }
-
-  const rect = settingsOverlay.getBoundingClientRect()
-  return (clientX >= rect.left && clientX <= rect.right
-          && clientY >= rect.top && clientY <= rect.bottom)
+  return showSettings.value
 }
 
 // 点击事件处理
@@ -1510,7 +1499,7 @@ onMounted(async () => {
   }
 
   window.addEventListener('resize', handleResize)
-  window.addEventListener('storage', handleStorageChange)
+  globalThis.addEventListener('storage', handleStorageChange)
 
   // 只在设置面板显示时监听全局鼠标事件
   const watchSettings = () => {
@@ -1705,7 +1694,7 @@ onUnmounted(() => {
   }
   // 清理窗口大小监听器
   window.removeEventListener('resize', handleResize)
-  window.removeEventListener('storage', handleStorageChange)
+  globalThis.removeEventListener('storage', handleStorageChange)
 
   // 清理定期目光锁定计时器
   stopGazeAtUserTimer()
@@ -1737,7 +1726,7 @@ onUnmounted(() => {
         '--canvas-scale': canvasScale,
       }"
     >
-      <input
+      <UInput
         v-model="inputText"
         type="text"
         :placeholder="isTyping ? '正在思考...' : '请输入内容（回车发送）...'"
@@ -1750,27 +1739,33 @@ onUnmounted(() => {
         @click="handleInputCursorMove"
         @keydown="handleKeyDown"
         @select="handleInputCursorMove"
-      >
+      />
       <!-- 按钮容器 -->
       <div class="button-container">
         <!-- Pin 按钮 -->
-        <button
+        <UButton
           class="pin-button"
           :class="{ pinned: isPinned }"
           :title="isPinned ? '取消固定' : '固定位置'"
+          variant="ghost"
+          color="neutral"
+          size="xs"
+          square
+          :icon="isPinned ? 'i-carbon-pin-filled' : 'i-carbon-pin'"
           @click="togglePin"
-        >
-          <UIcon name="i-carbon-pin" class="text-18px" />
-        </button>
+        />
 
         <!-- 设置按钮 -->
-        <button
+        <UButton
           class="settings-button"
           title="打开设置"
+          variant="ghost"
+          color="neutral"
+          size="xs"
+          square
+          icon="i-carbon-settings"
           @click="openSettingsWindow"
-        >
-          <UIcon name="i-carbon-settings" class="text-18px" />
-        </button>
+        />
       </div>
     </div>
 
@@ -1864,19 +1859,21 @@ onUnmounted(() => {
   />
 
   <!-- 人设编辑器弹窗 -->
-  <teleport to="body">
-    <div v-if="showCharacterEditor" class="editor-overlay" @click="handleCharacterEditorCancel">
-      <div class="editor-container" @click.stop>
-        <CharacterEditor
-          :character="editingCharacter"
-          :mode="characterEditorMode"
-          @save="handleCharacterSave"
-          @cancel="handleCharacterEditorCancel"
-          @delete="handleCharacterEditorDelete"
-        />
-      </div>
-    </div>
-  </teleport>
+  <UModal
+    :open="showCharacterEditor"
+    :close="false"
+    @update:open="(open) => { if (!open) handleCharacterEditorCancel() }"
+  >
+    <template #content>
+      <CharacterEditor
+        :character="editingCharacter"
+        :mode="characterEditorMode"
+        @save="handleCharacterSave"
+        @cancel="handleCharacterEditorCancel"
+        @delete="handleCharacterEditorDelete"
+      />
+    </template>
+  </UModal>
 </template>
 
 <style scoped>
@@ -1891,7 +1888,8 @@ onUnmounted(() => {
   /* 确保可以接收所有鼠标事件 */
   pointer-events: auto;
   /* 添加几乎透明的背景，确保透明区域也能接收鼠标事件 */
-  background-color: rgba(0, 0, 0, 0.001);
+  background-color: transparent;
+  background-color: color-mix(in oklab, var(--ui-bg) 0.1%, transparent);
 }
 
 #canvas {
@@ -1910,7 +1908,7 @@ onUnmounted(() => {
   gap: 8px;
   -webkit-app-region: no-drag;
   pointer-events: auto;
-  opacity: 0.05;
+  opacity: 0;
   transition: opacity 0.3s ease-in-out;
 }
 
@@ -1927,32 +1925,36 @@ onUnmounted(() => {
 }
 
 .text-input {
+  width: 100%;
+}
+
+:deep(.text-input [data-slot="base"]) {
   padding: 12px 16px;
   width: 100%;
-  border: 1px solid #ddd;
+  border: 1px solid var(--ui-border);
   border-radius: 12px;
   font-size: 14px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #0f172a;
-  caret-color: #0f172a;
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text);
+  caret-color: var(--ui-text);
   outline: none;
   -webkit-app-region: no-drag;
   pointer-events: auto;
   box-sizing: border-box;
 }
 
-.text-input::placeholder {
-  color: #64748b;
+:deep(.text-input [data-slot="base"]::placeholder) {
+  color: var(--ui-text-muted);
 }
 
-.text-input:focus {
-  border-color: #4a9eff;
-  box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.1);
-  background: rgba(255, 255, 255, 0.95);
+:deep(.text-input [data-slot="base"]:focus) {
+  border-color: var(--ui-primary);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ui-primary) 20%, transparent);
+  background: var(--ui-bg);
 }
 
-.text-input:disabled {
-  background: rgba(230, 230, 230, 0.9);
+:deep(.text-input [data-slot="base"]:disabled) {
+  background: var(--ui-bg-muted);
   cursor: not-allowed;
 }
 
@@ -1967,58 +1969,62 @@ onUnmounted(() => {
 .pin-button {
   width: 32px;
   height: 32px;
+  padding: 0;
+  min-width: 0;
   border: none;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #0f172a;
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text);
   font-size: 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 8px color-mix(in oklab, var(--ui-text) 12%, transparent);
   transition: all 0.2s ease;
   -webkit-app-region: no-drag;
   pointer-events: auto;
 }
 
 .pin-button:hover {
-  background: rgba(255, 255, 255, 1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background: var(--ui-bg);
+  box-shadow: 0 4px 12px color-mix(in oklab, var(--ui-text) 16%, transparent);
   transform: scale(1.05);
 }
 
 .pin-button.pinned {
-  background: rgba(255, 100, 100, 0.9);
-  color: white;
+  background: color-mix(in oklab, var(--ui-error) 90%, transparent);
+  color: var(--ui-text-inverted);
 }
 
 .pin-button.pinned:hover {
-  background: rgba(255, 100, 100, 1);
+  background: var(--ui-error);
 }
 
 /* 设置按钮样式 */
 .settings-button {
   width: 32px;
   height: 32px;
+  padding: 0;
+  min-width: 0;
   border: none;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.9);
-  color: #0f172a;
+  background: var(--ui-bg-elevated);
+  color: var(--ui-text);
   font-size: 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 8px color-mix(in oklab, var(--ui-text) 12%, transparent);
   transition: all 0.2s ease;
   -webkit-app-region: no-drag;
   pointer-events: auto;
 }
 
 .settings-button:hover {
-  background: rgba(255, 255, 255, 1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background: var(--ui-bg);
+  box-shadow: 0 4px 12px color-mix(in oklab, var(--ui-text) 16%, transparent);
   transform: scale(1.05);
 }
 
@@ -2034,14 +2040,13 @@ onUnmounted(() => {
 }
 
 .bubble-content {
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid #ddd;
+  background: var(--ui-bg-elevated);
+  border: 1px solid var(--ui-border);
   border-radius: 18px;
   padding: 12px 16px;
   font-size: 14px;
   line-height: 1.4;
-  color: #333;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  color: var(--ui-text);
   word-wrap: break-word;
   white-space: pre-wrap;
   position: relative;
@@ -2056,7 +2061,7 @@ onUnmounted(() => {
   height: 0;
   border-left: 8px solid transparent;
   border-right: 8px solid transparent;
-  border-top: 8px solid rgba(255, 255, 255, 0.95);
+  border-top: 8px solid var(--ui-bg-elevated);
 }
 
 .bubble-arrow::before {
@@ -2068,7 +2073,7 @@ onUnmounted(() => {
   height: 0;
   border-left: 8px solid transparent;
   border-right: 8px solid transparent;
-  border-top: 8px solid #ddd;
+  border-top: 8px solid var(--ui-border);
 }
 
 /* 吐槽气泡样式 */
@@ -2084,14 +2089,13 @@ onUnmounted(() => {
 }
 
 .roast-bubble-content {
-  background: rgba(240, 240, 240, 0.95);
-  border: 1px solid #ccc;
+  background: var(--ui-bg-muted);
+  border: 1px solid var(--ui-border);
   border-radius: 18px;
   padding: 12px 16px;
   font-size: 14px;
   line-height: 1.4;
-  color: #555;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  color: var(--ui-text-toned);
   word-wrap: break-word;
   white-space: pre-wrap;
   position: relative;
@@ -2106,7 +2110,7 @@ onUnmounted(() => {
   height: 0;
   border-left: 8px solid transparent;
   border-right: 8px solid transparent;
-  border-top: 8px solid rgba(240, 240, 240, 0.95);
+  border-top: 8px solid var(--ui-bg-muted);
 }
 
 .roast-bubble-arrow::before {
@@ -2118,7 +2122,7 @@ onUnmounted(() => {
   height: 0;
   border-left: 8px solid transparent;
   border-right: 8px solid transparent;
-  border-top: 8px solid #ccc;
+  border-top: 8px solid var(--ui-border);
 }
 
 /* 吐槽气泡动画 */
@@ -2140,8 +2144,8 @@ onUnmounted(() => {
   justify-content: center;
   gap: 8px;
   padding: 8px 16px;
-  background: rgba(75, 85, 99, 0.9);
-  color: white;
+  background: var(--ui-bg-inverted);
+  color: var(--ui-text-inverted);
   border-radius: 20px;
   font-size: 14px;
   backdrop-filter: blur(8px);
@@ -2160,7 +2164,7 @@ onUnmounted(() => {
 .wave {
   width: 3px;
   height: 12px;
-  background: white;
+  background: var(--ui-text-inverted);
   border-radius: 2px;
   animation: waveAnimation 1.4s ease-in-out infinite;
 }
@@ -2196,55 +2200,21 @@ onUnmounted(() => {
 /* 设置面板相关样式已迁移到 SettingsPanel 与各 Tab 组件 */
 
 /* 人设编辑器弹窗样式 */
-.editor-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 11000;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  -webkit-app-region: no-drag;
-  pointer-events: auto;
-}
-
-.editor-container {
-  max-width: 90vw;
-  max-height: 90vh;
-  overflow: auto;
-  pointer-events: auto;
-}
 
 /* 设置项/按钮样式已由 SettingsPanel 子组件提供 */
 
 /* 设置面板内样式（吐槽/录制等）已拆分到独立 Tab 组件 */
 
-.history-list {
-  max-height: 150px;
-  overflow-y: auto;
-}
-
-.history-item {
-  padding: 8px 12px;
-  margin-bottom: 8px;
-  background: rgba(0, 0, 0, 0.03);
-  border-radius: 8px;
-  border-left: 3px solid #ff6b6b;
-}
-
 .history-content {
   font-size: 13px;
-  color: #333;
+  color: var(--ui-text);
   margin-bottom: 4px;
   line-height: 1.3;
 }
 
 .history-time {
   font-size: 11px;
-  color: #999;
+  color: var(--ui-text-muted);
   text-align: right;
 }
 
