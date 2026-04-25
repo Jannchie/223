@@ -1,4 +1,3 @@
-/* eslint-disable node/prefer-global/process */
 import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
@@ -50,6 +49,15 @@ let alwaysOnTopInterval: NodeJS.Timeout | null = null
 let screenshotRoastTimer: NodeJS.Timeout | null = null
 let screenshotRoastEnabled = false
 let screenshotRoastInterval = 5 * 60 * 1000 // 默认 5 分钟
+
+type ScreenshotCaptureReason = 'manual' | 'auto-roast' | 'hotkey-roast'
+
+interface ScreenshotSize {
+  width: number
+  height: number
+}
+
+const screenshotDebugDirectoryName = 'vision-debug-screenshots'
 
 // GPU 和性能优化配置
 app.commandLine.appendSwitch('--enable-gpu-rasterization')
@@ -221,12 +229,10 @@ async function createSettingsWindow() {
     ] as Electron.MenuItemConstructorOptions[]
 
     if (VITE_DEV_SERVER_URL) {
-      template.push({ type: 'separator' })
-      template.push({
+      template.push({ type: 'separator' }, {
         label: 'Inspect Element',
         click: () => settingsWin?.webContents.inspectElement(params.x, params.y),
-      })
-      template.push({
+      }, {
         label: 'Toggle DevTools',
         click: () => settingsWin?.webContents.openDevTools({ mode: 'detach' }),
       })
@@ -311,11 +317,11 @@ function createTray() {
     {
       type: 'separator',
     },
-      {
-        label: '退出',
-        type: 'normal',
-        click: () => {
-          app.quit()
+    {
+      label: '退出',
+      type: 'normal',
+      click: () => {
+        app.quit()
       },
     },
   ])
@@ -475,7 +481,6 @@ app.on('activate', () => {
 // Enable hardware acceleration for better performance
 // app.disableHardwareAcceleration() // Commented out for better Live2D performance
 
-// eslint-disable-next-line unicorn/prefer-top-level-await
 app.whenReady().then(() => {
   // 处理麦克风权限
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
@@ -519,11 +524,11 @@ app.whenReady().then(() => {
       // 检查文件是否存在
       return fs.existsSync(filePath)
         ? new Response(fs.readFileSync(filePath), {
-          headers: {
-            'Content-Type': getContentType(filePath),
-            'Access-Control-Allow-Origin': '*',
-          },
-        })
+            headers: {
+              'Content-Type': getContentType(filePath),
+              'Access-Control-Allow-Origin': '*',
+            },
+          })
         : new Response('File not found', { status: 404 })
     }
     catch (error) {
@@ -552,40 +557,111 @@ function getContentType(filePath: string): string {
   return mimeTypes[ext] || 'application/octet-stream'
 }
 
-// 截图功能
-async function captureScreenshot(): Promise<string | null> {
+function getScreenshotDebugDirectory(): string {
+  const configuredDirectory = process.env.NINISAN_VISION_DEBUG_DIR?.trim()
+  if (configuredDirectory) {
+    return path.resolve(configuredDirectory)
+  }
+
+  return path.join(app.getPath('userData'), screenshotDebugDirectoryName)
+}
+
+function padNumber(value: number, size = 2): string {
+  return String(value).padStart(size, '0')
+}
+
+function formatDebugTimestamp(date: Date): string {
+  return `${date.getFullYear()}${padNumber(date.getMonth() + 1)}${padNumber(date.getDate())}-${padNumber(date.getHours())}${padNumber(date.getMinutes())}${padNumber(date.getSeconds())}-${padNumber(date.getMilliseconds(), 3)}`
+}
+
+function sanitizeFilenamePart(value: string): string {
+  const sanitizedValue = value
+    .trim()
+    .replaceAll(/[<>:"/\\|?*\u0000-\u001F]+/g, '_')
+    .replaceAll(/\s+/g, '-')
+    .replaceAll(/_+/g, '_')
+    .slice(0, 80)
+
+  return sanitizedValue || 'source'
+}
+
+function getScreenshotThumbnailSize(): ScreenshotSize {
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const longEdgeLimit = 1920
+  const longEdge = Math.max(primaryDisplay.size.width, primaryDisplay.size.height)
+  const scale = longEdge > longEdgeLimit ? longEdgeLimit / longEdge : 1
+
+  return {
+    width: Math.round(primaryDisplay.size.width * scale),
+    height: Math.round(primaryDisplay.size.height * scale),
+  }
+}
+
+function saveVisionDebugScreenshot(
+  pngData: Buffer,
+  reason: ScreenshotCaptureReason,
+  sourceName: string,
+  imageSize: ScreenshotSize,
+): string | null {
   try {
-    // 获取所有可用的窗口源
+    const debugDirectory = getScreenshotDebugDirectory()
+    fs.mkdirSync(debugDirectory, { recursive: true })
+
+    const filename = [
+      formatDebugTimestamp(new Date()),
+      reason,
+      `${imageSize.width}x${imageSize.height}`,
+      sanitizeFilenamePart(sourceName),
+    ].join('-')
+    const filePath = path.join(debugDirectory, `${filename}.png`)
+
+    fs.writeFileSync(filePath, pngData)
+    console.log(`Saved vision debug screenshot: ${filePath}`)
+    return filePath
+  }
+  catch (error) {
+    console.error('Failed to save vision debug screenshot:', error)
+    return null
+  }
+}
+
+// Capture the exact image that will be sent to the vision model.
+async function captureScreenshot(reason: ScreenshotCaptureReason = 'manual'): Promise<string | null> {
+  try {
+    const thumbnailSize = getScreenshotThumbnailSize()
+    const primaryDisplay = screen.getPrimaryDisplay()
     const sources = await desktopCapturer.getSources({
-      types: ['window'],
-      thumbnailSize: { width: 1920, height: 1080 },
+      types: ['screen', 'window'],
+      thumbnailSize,
     })
 
     if (sources.length === 0) {
-      console.error('No window sources available')
+      console.error('No screenshot sources available')
       return null
     }
 
-    // 找到当前活动窗口（通常是最前面的窗口）
-    // 我们可以通过窗口名称或者选择第一个非 Electron 应用的窗口
-    let targetSource = sources[0]
-
-    // 尝试找到非当前应用的活动窗口
-    for (const source of sources) {
-      // 跳过空白窗口和我们自己的应用窗口
-      if (source.name
-          && !source.name.includes('NiNiSan')
-          && !source.name.includes('Electron')
-          && source.name.trim() !== '') {
-        targetSource = source
-        break
-      }
-    }
+    // Prefer the primary screen so protected or minimized window thumbnails do not look like black frames.
+    const screenSources = sources.filter(source => source.id.startsWith('screen:'))
+    const windowSources = sources.filter(source => !source.id.startsWith('screen:'))
+    const primaryScreenSource = screenSources.find(source => source.display_id === String(primaryDisplay.id))
+    const fallbackWindowSource = windowSources.find(source =>
+      source.name
+      && !source.name.includes('NiNiSan')
+      && !source.name.includes('Electron')
+      && source.name.trim() !== '',
+    )
+    const targetSource = primaryScreenSource ?? screenSources[0] ?? fallbackWindowSource ?? sources[0]
 
     const screenshot = targetSource.thumbnail
+    if (screenshot.isEmpty()) {
+      console.error(`Captured screenshot is empty: ${targetSource.name}`)
+      return null
+    }
 
-    // 转换为 base64 格式
-    const base64Data = screenshot.toPNG().toString('base64')
+    const pngData = screenshot.toPNG()
+    saveVisionDebugScreenshot(pngData, reason, targetSource.name, screenshot.getSize())
+
+    const base64Data = pngData.toString('base64')
     return `data:image/png;base64,${base64Data}`
   }
   catch (error) {
@@ -602,7 +678,7 @@ function startScreenshotRoast() {
 
   screenshotRoastTimer = setInterval(async () => {
     if (screenshotRoastEnabled && win && !win.isDestroyed()) {
-      const screenshot = await captureScreenshot()
+      const screenshot = await captureScreenshot('auto-roast')
       if (screenshot) {
         win.webContents.send('screenshot-captured', screenshot)
       }
@@ -622,7 +698,7 @@ function stopScreenshotRoast() {
 function setupIpcHandlers() {
   // 手动截图
   ipcMain.handle('take-screenshot', async () => {
-    return await captureScreenshot()
+    return await captureScreenshot('manual')
   })
 
   // 启用/禁用截图吐槽
@@ -682,7 +758,7 @@ function registerGlobalShortcuts() {
     const ret1 = globalShortcut.register('F7', async () => {
       if (win && !win.isDestroyed()) {
         // 触发截图吐槽
-        const screenshot = await captureScreenshot()
+        const screenshot = await captureScreenshot('hotkey-roast')
         if (screenshot) {
           win.webContents.send('hotkey-screenshot-roast', screenshot)
         }

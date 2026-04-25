@@ -93,6 +93,7 @@ const isRecording = ref(false)
 // Pin 状态 - 当pinned为true时，除了pin按钮外的所有交互都被禁用
 const isPinned = ref(false)
 const isHoveringModel = ref(false)
+const isInputVisible = ref(false)
 
 // 聊天功能集成
 const {
@@ -117,6 +118,7 @@ const baseURL = computed({
 })
 const showSettings = ref(false)
 const urlParams = new URLSearchParams(globalThis.location.search)
+const isSettingsWindow = ref(urlParams.get('settings') === 'true')
 
 function setApiKey(v: string) {
   apiKey.value = v
@@ -154,7 +156,6 @@ async function openSettingsWindow() {
 // 人设管理相关状态
 const currentCharacter = ref<Character | null>(null)
 const activeSettingsTab = ref<'openai' | 'character' | 'roast' | 'gaze'>('openai')
-const isSettingsWindow = ref(urlParams.get('settings') === 'true')
 const showCharacterEditor = ref(false)
 const editingCharacter = ref<Character | null>(null)
 
@@ -225,9 +226,6 @@ watch(chatIsTyping, (isTyping) => {
 
 // 窗口尺寸
 const windowHeight = ref(window.innerHeight)
-
-// 输入框显示控制
-const isInputVisible = ref(false)
 
 // 鼠标位置状态
 const mouseX = ref(0)
@@ -375,7 +373,7 @@ function debounce<T extends (...args: any[]) => void>(func: T, delay: number): T
   let timeoutId: NodeJS.Timeout
   return ((...args: any[]) => {
     clearTimeout(timeoutId)
-    timeoutId = setTimeout(() => func(...args), delay)
+    timeoutId = setTimeout(func, delay, ...args)
   }) as T
 }
 
@@ -1011,7 +1009,7 @@ function isPointInInput(clientX: number, clientY: number): boolean {
 }
 
 // 检查点击是否在设置面板区域内
-function isPointInSettings(clientX: number, clientY: number): boolean {
+function isPointInSettings(_clientX: number, _clientY: number): boolean {
   return showSettings.value
 }
 
@@ -1169,6 +1167,12 @@ async function handleCharacterSave(character: Character) {
 function handleCharacterEditorCancel() {
   showCharacterEditor.value = false
   editingCharacter.value = null
+}
+
+function handleCharacterEditorOpenChange(open: boolean) {
+  if (!open) {
+    handleCharacterEditorCancel()
+  }
 }
 
 async function handleCharacterEditorDelete(character: Character) {
@@ -1332,6 +1336,10 @@ function clearRoastHistory() {
   roastHistoryManager.clearHistory()
   roastHistory.value = []
   currentRoast.value = null
+}
+
+function handleGazeTestLock() {
+  startGazeAtUser(modelRef.value)
 }
 
 // 处理快捷键触发的截图吐槽
@@ -1609,7 +1617,6 @@ onMounted(async () => {
     () => isInputFocused.value || showSettings.value || isTyping.value,
     () => model,
   )
-
 })
 
 // 组件卸载时清理事件监听器
@@ -1818,7 +1825,7 @@ onUnmounted(() => {
     @roast-trigger="triggerManualRoast"
     @roast-clear-history="clearRoastHistory"
     @gaze-update-config="updateGazeAtUserConfig"
-    @gaze-test-lock="() => startGazeAtUser(modelRef.value)"
+    @gaze-test-lock="handleGazeTestLock"
     @save="saveSettings"
     @cancel="cancelSettings"
   />
@@ -1827,7 +1834,7 @@ onUnmounted(() => {
   <UModal
     :open="showCharacterEditor"
     :close="false"
-    @update:open="(open) => { if (!open) handleCharacterEditorCancel() }"
+    @update:open="handleCharacterEditorOpenChange"
   >
     <template #content>
       <CharacterEditor
@@ -1955,7 +1962,6 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px color-mix(in oklab, var(--ui-text) 12%, transparent);
   transition: all 0.2s ease;
   -webkit-app-region: no-drag;
   pointer-events: auto;
@@ -1963,7 +1969,6 @@ onUnmounted(() => {
 
 .pin-button:hover {
   background: var(--ui-bg);
-  box-shadow: 0 4px 12px color-mix(in oklab, var(--ui-text) 16%, transparent);
   transform: scale(1.05);
 }
 
@@ -1991,7 +1996,6 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px color-mix(in oklab, var(--ui-text) 12%, transparent);
   transition: all 0.2s ease;
   -webkit-app-region: no-drag;
   pointer-events: auto;
@@ -1999,7 +2003,6 @@ onUnmounted(() => {
 
 .settings-button:hover {
   background: var(--ui-bg);
-  box-shadow: 0 4px 12px color-mix(in oklab, var(--ui-text) 16%, transparent);
   transform: scale(1.05);
 }
 
@@ -2215,7 +2218,6 @@ onUnmounted(() => {
 
   /* 设置面板响应式样式由 SettingsPanel 组件提供 */
 }
-
 
 /* 目光跟踪设置样式已迁移至 GazeSettings 组件 */
 </style>

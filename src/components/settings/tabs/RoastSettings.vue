@@ -33,6 +33,13 @@ const styleOptions = [
   { label: '毒舌 - 锐利吐槽', value: 'savage' },
   { label: '专业 - 建设性建议', value: 'professional' },
 ]
+function updateInterval(value: unknown) {
+  emit('setInterval', Number(value))
+}
+
+function updateStyle(value: unknown) {
+  emit('setStyle', value as RoastStyle)
+}
 </script>
 
 <template>
@@ -48,7 +55,7 @@ const styleOptions = [
       <USelect
         :model-value="roastConfig.interval"
         :items="intervalOptions"
-        @update:model-value="v => emit('setInterval', Number(v))"
+        @update:model-value="updateInterval"
       />
     </UFormField>
 
@@ -56,13 +63,15 @@ const styleOptions = [
       <USelect
         :model-value="roastConfig.style"
         :items="styleOptions"
-        @update:model-value="v => emit('setStyle', v as RoastStyle)"
+        @update:model-value="updateStyle"
       />
     </UFormField>
 
     <UCard variant="soft">
       <template #header>
-        <div class="font-medium">手动触发</div>
+        <div class="font-medium">
+          手动触发
+        </div>
       </template>
       <div class="flex items-center gap-3">
         <UButton :loading="isRoasting" color="primary" @click="emit('trigger')">
@@ -90,7 +99,9 @@ const styleOptions = [
     <UCard v-if="roastHistory.length > 0" variant="soft">
       <template #header>
         <div class="flex items-center justify-between">
-          <div class="font-medium">吐槽历史</div>
+          <div class="font-medium">
+            吐槽历史
+          </div>
           <UButton color="neutral" variant="ghost" size="xs" @click="emit('clearHistory')">
             清空
           </UButton>

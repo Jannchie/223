@@ -4,12 +4,7 @@
   "appId": "com.ninisan.desktop-pet",
   "asar": true,
   "productName": "NiNiSan",
-  "copyright": "Copyright © 2025",
-  "description": "NiNiSan - 桌面助手应用",
-  "author": {
-    "name": "NiNiSan Team"
-  },
-  "homepage": "https://github.com/ninisan/desktop-pet",
+  "copyright": "Copyright (c) 2025",
   "directories": {
     "output": "release/${version}"
   },
@@ -35,8 +30,7 @@
       }
     ],
     "artifactName": "${productName}-Windows-${version}-Setup.${ext}",
-    "icon": "build/icon.ico",
-    "publisherDisplayName": "NiNiSan Team"
+    "icon": "build/icon.ico"
   },
   "nsis": {
     "oneClick": false,

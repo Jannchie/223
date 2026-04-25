@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { GazeAtUserConfig, GazeAtUserConfigUpdate } from '../../composables/useGaze'
 import type { RoastStyle } from '../../utils/screenshot-prompts'
 import type { RoastResult, ScreenshotRoastConfig } from '../../utils/screenshot-roast'
 import { computed } from 'vue'
@@ -23,7 +24,7 @@ const props = defineProps<{
   currentRoast: RoastResult | null
   roastHistory: RoastResult[]
   // Gaze
-  gazeAtUserConfig: any
+  gazeAtUserConfig: GazeAtUserConfig
 }>()
 
 const emit = defineEmits<{
@@ -45,7 +46,7 @@ const emit = defineEmits<{
   (e: 'roastTrigger'): void
   (e: 'roastClearHistory'): void
   // Gaze
-  (e: 'gazeUpdateConfig', cfg: any): void
+  (e: 'gazeUpdateConfig', cfg: GazeAtUserConfigUpdate): void
   (e: 'gazeTestLock'): void
 }>()
 

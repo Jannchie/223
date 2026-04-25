@@ -1,6 +1,14 @@
 <script setup lang="ts">
 defineProps<{ apiKey: string, baseURL: string }>()
 const emit = defineEmits<{ (e: 'update:apiKey', v: string): void, (e: 'update:baseURL', v: string): void }>()
+
+function updateApiKey(value: unknown) {
+  emit('update:apiKey', String(value ?? ''))
+}
+
+function updateBaseURL(value: unknown) {
+  emit('update:baseURL', String(value ?? ''))
+}
 </script>
 
 <template>
@@ -11,7 +19,7 @@ const emit = defineEmits<{ (e: 'update:apiKey', v: string): void, (e: 'update:ba
         type="password"
         placeholder="请输入 OpenAI API Key"
         autocomplete="off"
-        @update:model-value="v => emit('update:apiKey', String(v ?? ''))"
+        @update:model-value="updateApiKey"
       />
     </UFormField>
 
@@ -20,9 +28,8 @@ const emit = defineEmits<{ (e: 'update:apiKey', v: string): void, (e: 'update:ba
         :model-value="baseURL"
         type="text"
         placeholder="API 基础地址"
-        @update:model-value="v => emit('update:baseURL', String(v ?? ''))"
+        @update:model-value="updateBaseURL"
       />
     </UFormField>
   </div>
 </template>
-

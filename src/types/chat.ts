@@ -139,7 +139,7 @@ export interface ChatService {
   sendMessage: (
     content: string,
     context: ChatContext,
-    callbacks: StreamingCallbacks
+    callbacks: StreamingCallbacks,
   ) => Promise<void>
   generateSystemPrompt: (character: Character, memories: Memory[]) => string
   validateConfig: (config: ChatConfig) => boolean

@@ -184,7 +184,9 @@ onMounted(() => {
   <UCard class="character-editor">
     <template #header>
       <div class="editor-header">
-        <div class="editor-title">{{ title }}</div>
+        <div class="editor-title">
+          {{ title }}
+        </div>
         <UButton
           v-if="isEditMode"
           color="error"
@@ -200,7 +202,9 @@ onMounted(() => {
 
     <div class="editor-content">
       <div class="form-section">
-        <div class="section-title">基本信息</div>
+        <div class="section-title">
+          基本信息
+        </div>
 
         <UFormField label="角色名称" required :error="errors.name">
           <UInput v-model="formData.name" placeholder="输入角色名称" />
@@ -244,7 +248,9 @@ onMounted(() => {
       </div>
 
       <div class="form-section">
-        <div class="section-title">系统提示词 *</div>
+        <div class="section-title">
+          系统提示词 *
+        </div>
         <UFormField :error="errors.systemPrompt">
           <UTextarea
             v-model="formData.systemPrompt"

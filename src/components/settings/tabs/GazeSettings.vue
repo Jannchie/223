@@ -1,6 +1,8 @@
 <script setup lang="ts">
-const props = defineProps<{ gazeConfig: any }>()
-const emit = defineEmits<{ (e: 'updateConfig', cfg: any): void, (e: 'testLock'): void }>()
+import type { GazeAtUserConfig, GazeAtUserConfigUpdate } from '../../../composables/useGaze'
+
+defineProps<{ gazeConfig: GazeAtUserConfig }>()
+const emit = defineEmits<{ (e: 'updateConfig', cfg: GazeAtUserConfigUpdate): void, (e: 'testLock'): void }>()
 
 const intervalOptions = [
   { label: '30 秒', value: 0.5 },
@@ -20,6 +22,29 @@ const durationOptions = [
   { label: '10 秒', value: 10 },
 ]
 
+function updateConfig(cfg: GazeAtUserConfigUpdate) {
+  emit('updateConfig', cfg)
+}
+
+function updateEnabled(value: unknown) {
+  updateConfig({ enabled: Boolean(value) })
+}
+
+function updateIntervalMinutes(value: unknown) {
+  updateConfig({ intervalMinutes: Number(value) })
+}
+
+function updateLockDurationSeconds(value: unknown) {
+  updateConfig({ lockDurationSeconds: Number(value) })
+}
+
+function updateRandomizeInterval(value: unknown) {
+  updateConfig({ randomizeInterval: Boolean(value) })
+}
+
+function updateRandomizeDuration(value: unknown) {
+  updateConfig({ randomizeDuration: Boolean(value) })
+}
 </script>
 
 <template>
@@ -27,7 +52,7 @@ const durationOptions = [
     <UFormField label="启用目光锁定" description="定时让角色看向你">
       <USwitch
         :model-value="gazeConfig.enabled"
-        @update:model-value="v => emit('updateConfig', { enabled: v })"
+        @update:model-value="updateEnabled"
       />
     </UFormField>
 
@@ -36,7 +61,7 @@ const durationOptions = [
         :model-value="gazeConfig.intervalMinutes"
         :items="intervalOptions"
         :disabled="!gazeConfig.enabled"
-        @update:model-value="v => emit('updateConfig', { intervalMinutes: Number(v) })"
+        @update:model-value="updateIntervalMinutes"
       />
     </UFormField>
 
@@ -45,7 +70,7 @@ const durationOptions = [
         :model-value="gazeConfig.lockDurationSeconds"
         :items="durationOptions"
         :disabled="!gazeConfig.enabled"
-        @update:model-value="v => emit('updateConfig', { lockDurationSeconds: Number(v) })"
+        @update:model-value="updateLockDurationSeconds"
       />
     </UFormField>
 
@@ -56,7 +81,7 @@ const durationOptions = [
       <USwitch
         :model-value="gazeConfig.randomizeInterval"
         :disabled="!gazeConfig.enabled"
-        @update:model-value="v => emit('updateConfig', { randomizeInterval: v })"
+        @update:model-value="updateRandomizeInterval"
       />
     </UFormField>
 
@@ -67,7 +92,7 @@ const durationOptions = [
       <USwitch
         :model-value="gazeConfig.randomizeDuration"
         :disabled="!gazeConfig.enabled"
-        @update:model-value="v => emit('updateConfig', { randomizeDuration: v })"
+        @update:model-value="updateRandomizeDuration"
       />
     </UFormField>
 
@@ -80,4 +105,3 @@ const durationOptions = [
     </UButton>
   </div>
 </template>
-

@@ -14,12 +14,23 @@ export interface UpdateGazeParams {
   isGazingAtUser: boolean
 }
 
+export interface GazeAtUserConfig {
+  enabled: boolean
+  intervalMinutes: number
+  lockDurationSeconds: number
+  randomizeInterval: boolean
+  randomizeDuration: boolean
+  randomOffset: boolean
+}
+
+export type GazeAtUserConfigUpdate = Partial<GazeAtUserConfig>
+
 export function useGaze() {
   // Public state
   const gazeTargetX = ref<number | null>(null)
   const gazeTargetY = ref<number | null>(null)
 
-  const gazeAtUserConfig = useLocalStorage('gaze-at-user-config', {
+  const gazeAtUserConfig = useLocalStorage<GazeAtUserConfig>('gaze-at-user-config', {
     enabled: true,
     intervalMinutes: 1,
     lockDurationSeconds: 3,
@@ -131,7 +142,7 @@ export function useGaze() {
     // Caller should pass current model when wanting to force stop
   }
 
-  function updateGazeAtUserConfig(newConfig: Partial<typeof gazeAtUserConfig.value>) {
+  function updateGazeAtUserConfig(newConfig: GazeAtUserConfigUpdate) {
     gazeAtUserConfig.value = { ...gazeAtUserConfig.value, ...newConfig }
   }
 

@@ -1,5 +1,7 @@
-ignoredBuiltDependencies:
-  - electron
-  - esbuild
+shellEmulator: true
+trustPolicy: no-downgrade
+
 onlyBuiltDependencies:
+  - electron
   - electron-winstaller
+  - esbuild
