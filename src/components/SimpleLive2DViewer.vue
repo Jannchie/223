@@ -111,7 +111,7 @@ const apiKey = computed({
   get: () => chatConfig.value.apiKey,
   set: (value: string) => updateConfig({ apiKey: value }),
 })
-const controlsVisible = computed(() => (isPinned.value ? isHoveringModel.value : isInputVisible.value))
+const controlsVisible = computed(() => isPinned.value || isInputVisible.value)
 const baseURL = computed({
   get: () => chatConfig.value.baseURL || 'https://api.openai.com/v1',
   set: (value: string) => updateConfig({ baseURL: value }),
@@ -224,10 +224,10 @@ watch(chatIsTyping, (isTyping) => {
   }
 })
 
-// 窗口尺寸
+// Window and pointer state
+const windowWidth = ref(window.innerWidth)
 const windowHeight = ref(window.innerHeight)
 
-// 鼠标位置状态
 const mouseX = ref(0)
 const mouseY = ref(0)
 const isLive2DModelLoaded = ref(false)
@@ -251,6 +251,39 @@ const {
   endDrag,
   wheelZoomAt,
 } = useLive2DCanvas()
+
+const controlViewportPadding = 12
+const pinnedControlSize = 32
+const minInputContainerWidth = 180
+const inputContainerEstimatedHeight = 88
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
+function clampToViewport(value: number, size: number, viewportSize: number): number {
+  const min = controlViewportPadding
+  const max = Math.max(min, viewportSize - size - controlViewportPadding)
+  return clampNumber(value, min, max)
+}
+
+const inputContainerStyle = computed<Record<string, string>>(() => {
+  const rawWidth = Math.max(canvasWidth.value * canvasScale.value, minInputContainerWidth)
+  const maxWidth = Math.max(minInputContainerWidth, windowWidth.value - controlViewportPadding * 2)
+  const width = isPinned.value ? pinnedControlSize : Math.min(rawWidth, maxWidth)
+  const height = isPinned.value ? pinnedControlSize : inputContainerEstimatedHeight
+  const rawLeft = isPinned.value
+    ? canvasX.value + canvasWidth.value * canvasScale.value - pinnedControlSize
+    : canvasX.value
+  const rawTop = canvasY.value + inputPositionY.value
+
+  return {
+    'left': `${clampToViewport(rawLeft, width, windowWidth.value)}px`,
+    'top': `${clampToViewport(rawTop, height, windowHeight.value)}px`,
+    'width': `${width}px`,
+    '--canvas-scale': String(canvasScale.value),
+  }
+})
 
 // 记录上次目标值的逻辑已移入 useGaze
 
@@ -1447,6 +1480,7 @@ function handleGlobalMouseMove(event: MouseEvent) {
 
 // 监听窗口大小变化
 function handleResize() {
+  windowWidth.value = window.innerWidth
   windowHeight.value = window.innerHeight
 }
 
@@ -1745,12 +1779,7 @@ onUnmounted(() => {
     <div
       class="input-container"
       :class="{ 'input-visible': controlsVisible }"
-      :style="{
-        'left': `${canvasX}px`,
-        'top': `${canvasY + inputPositionY}px`,
-        'width': `${canvasWidth * canvasScale}px`,
-        '--canvas-scale': canvasScale,
-      }"
+      :style="inputContainerStyle"
     >
       <UInput
         v-model="inputText"
@@ -1962,6 +1991,7 @@ onUnmounted(() => {
 }
 
 .text-input.input-hidden {
+  display: none;
   opacity: 0;
   pointer-events: none;
 }
