@@ -84,9 +84,11 @@ async function createWindow() {
 
   // 获取主显示器的完整尺寸（包括任务栏区域）
   const primaryDisplay = screen.getPrimaryDisplay()
-  const { width, height } = primaryDisplay.bounds
+  const { x, y, width, height } = primaryDisplay.bounds
 
   win = new BrowserWindow({
+    x,
+    y,
     width,
     height,
     transparent: true,
@@ -125,7 +127,8 @@ async function createWindow() {
   }, 5000)
 
   // 初始设置：不穿透，让前端控制穿透逻辑
-  win.setIgnoreMouseEvents(false, { forward: false })
+  // Keep the transparent overlay click-through until the renderer opts into capture.
+  win.setIgnoreMouseEvents(true, { forward: true })
 
   // 监听渲染进程的消息来动态控制鼠标事件
   win.webContents.on('ipc-message', (_, channel, data) => {
@@ -355,7 +358,11 @@ function startMouseTracking() {
       // 只有鼠标位置真正变化时才发送事件
       if (mousePos.x !== lastMousePosition.x || mousePos.y !== lastMousePosition.y) {
         lastMousePosition = { x: mousePos.x, y: mousePos.y }
-        win.webContents.send('mouse-position', { x: mousePos.x, y: mousePos.y })
+        const windowBounds = win.getBounds()
+        win.webContents.send('mouse-position', {
+          x: mousePos.x - windowBounds.x,
+          y: mousePos.y - windowBounds.y,
+        })
       }
     }
   }, 33) // ~30fps, 降低频率减少不必要的检查

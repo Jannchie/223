@@ -230,6 +230,7 @@ const windowHeight = ref(window.innerHeight)
 // 鼠标位置状态
 const mouseX = ref(0)
 const mouseY = ref(0)
+const isLive2DModelLoaded = ref(false)
 let model: Live2DModel | null = null
 const {
   app,
@@ -244,6 +245,7 @@ const {
   canvasScale,
   // minScale,
   // maxScale,
+  isDragging,
   startDrag,
   dragTo,
   endDrag,
@@ -915,6 +917,11 @@ function setMouseEventTransparency(shouldIgnore: boolean) {
   }
 }
 
+function updateMouseEventTransparency(clientX: number, clientY: number) {
+  const shouldCaptureMouse = isDragging.value || checkMouseInInteractiveArea(clientX, clientY)
+  setMouseEventTransparency(!shouldCaptureMouse)
+}
+
 // 鼠标移动事件处理（主要用于拖拽）
 function handleMouseMove(event: MouseEvent) {
   // 更新鼠标位置
@@ -927,7 +934,7 @@ function handleMouseMove(event: MouseEvent) {
   isInputVisible.value = shouldShowInput
 
   // 根据是否在交互区域控制鼠标穿透
-  setMouseEventTransparency(!shouldShowInput)
+  updateMouseEventTransparency(event.clientX, event.clientY)
 
   // 拖拽移动（内部会判断是否在拖拽中）
   dragTo(event.clientX, event.clientY)
@@ -935,13 +942,27 @@ function handleMouseMove(event: MouseEvent) {
 
 // 检查点击是否在canvas区域内
 function isPointInCanvas(clientX: number, clientY: number): boolean {
-  const currentCanvasWidth = canvasWidth.value * canvasScale.value
-  const currentCanvasHeight = canvasHeight.value * canvasScale.value
+  if (!isLive2DModelLoaded.value || !model) {
+    return false
+  }
 
-  return (clientX >= canvasX.value
-          && clientX <= canvasX.value + currentCanvasWidth
-          && clientY >= canvasY.value
-          && clientY <= canvasY.value + currentCanvasHeight)
+  try {
+    const bounds = model.getBounds()
+    if (bounds.width <= 0 || bounds.height <= 0) {
+      return false
+    }
+
+    const padding = 12
+    const left = canvasX.value + bounds.x - padding
+    const right = canvasX.value + bounds.x + bounds.width + padding
+    const top = canvasY.value + bounds.y - padding
+    const bottom = canvasY.value + bounds.y + bounds.height + padding
+
+    return clientX >= left && clientX <= right && clientY >= top && clientY <= bottom
+  }
+  catch {
+    return false
+  }
 }
 
 // 鼠标按下事件处理
@@ -959,14 +980,18 @@ function handleMouseDown(event: MouseEvent) {
   // 只有点击在canvas区域内才处理拖拽
   if (isPointInCanvas(event.clientX, event.clientY)) {
     startDrag(event.clientX, event.clientY)
+    setMouseEventTransparency(false)
     event.preventDefault()
     event.stopPropagation()
   }
 }
 
 // 鼠标释放事件处理
-function handleMouseUp(_: MouseEvent) {
+function handleMouseUp(event: MouseEvent) {
+  mouseX.value = event.clientX
+  mouseY.value = event.clientY
   endDrag()
+  updateMouseEventTransparency(event.clientX, event.clientY)
 }
 
 // 鼠标离开处理
@@ -974,7 +999,9 @@ function handleMouseLeave() {
   isInputVisible.value = false
   isHoveringModel.value = false
   // 鼠标完全离开应用区域时，恢复完全穿透
-  setMouseEventTransparency(true)
+  if (!isDragging.value) {
+    setMouseEventTransparency(true)
+  }
 }
 
 // 滚轮事件处理（以鼠标位置为中心缩放canvas）
@@ -998,6 +1025,10 @@ function handleWheel(event: WheelEvent) {
 
 // 检查点击是否在输入框区域内
 function isPointInInput(clientX: number, clientY: number): boolean {
+  if (!controlsVisible.value && !isInputFocused.value) {
+    return false
+  }
+
   const inputContainer = document.querySelector('.input-container') as HTMLElement
   if (!inputContainer) {
     return false
@@ -1215,15 +1246,19 @@ async function switchCharacter(character: Character) {
 
 // 加载 Live2D 模型
 async function loadLive2DModel(modelPath: string) {
+  isLive2DModelLoaded.value = false
   try {
     const modelURL = getModelURL(modelPath)
     console.log('Loading model from:', modelURL)
     await loadModelFromURL(modelURL)
     model = modelRef.value as unknown as Live2DModel | null
+    isLive2DModelLoaded.value = !!model
     // 重新计算输入框位置
     calculateInputPosition()
   }
   catch (error) {
+    model = null
+    isLive2DModelLoaded.value = false
     console.error('模型加载失败:', error)
     showTemporaryBubble(`模型加载失败: ${error instanceof Error ? error.message : String(error)}`)
   }
@@ -1407,7 +1442,7 @@ function handleGlobalMouseMove(event: MouseEvent) {
   isInputVisible.value = shouldShowInput
 
   // 根据是否在交互区域控制鼠标穿透
-  setMouseEventTransparency(!shouldShowInput)
+  updateMouseEventTransparency(event.clientX, event.clientY)
 }
 
 // 监听窗口大小变化
@@ -1448,6 +1483,8 @@ function handleStorageChange(event: StorageEvent) {
 }
 
 onMounted(async () => {
+  setMouseEventTransparency(true)
+
   // 初始化人设服务并加载当前角色
   try {
     await characterService.initialize()
@@ -1514,18 +1551,24 @@ onMounted(async () => {
   console.log('Loading model from:', modelURL)
 
   // 带重试的模型加载，以防服务器还未准备好
+  isLive2DModelLoaded.value = false
   let retries = 3
+  let modelLoadError: unknown = null
   while (retries > 0) {
     try {
       await loadModelFromURL(modelURL)
       model = modelRef.value as unknown as Live2DModel | null
+      isLive2DModelLoaded.value = !!model
       break
     }
     catch (error) {
       console.error(`Model loading failed, retries left: ${retries - 1}`, error)
       retries--
       if (retries === 0) {
-        throw error
+        model = null
+        isLive2DModelLoaded.value = false
+        modelLoadError = error
+        break
       }
       // 等待 1 秒后重试
       await new Promise(resolve => setTimeout(resolve, 1000))
@@ -1533,6 +1576,11 @@ onMounted(async () => {
   }
 
   // 将模型设为全局变量，方便外部访问
+  if (modelLoadError) {
+    const message = modelLoadError instanceof Error ? modelLoadError.message : String(modelLoadError)
+    showTemporaryBubble(`Model failed to load: ${message}`)
+  }
+
   if (typeof globalThis !== 'undefined') {
     (globalThis as any).live2dModel = model
   }
@@ -1582,6 +1630,11 @@ onMounted(async () => {
   // 监听electron后端的全局鼠标位置
   if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.onMousePosition) {
     (globalThis as any).electronAPI.onMousePosition((position: { x: number, y: number }) => {
+      mouseX.value = position.x
+      mouseY.value = position.y
+      isHoveringModel.value = isPointInCanvas(position.x, position.y)
+      isInputVisible.value = checkMouseInInteractiveArea(position.x, position.y)
+      updateMouseEventTransparency(position.x, position.y)
       // 如果输入框聚焦中或正在锁定用户，忽略鼠标位置事件
       if (!isInputFocused.value && !isGazingAtUser.value) {
         setGazeTarget(position.x, position.y)
@@ -1884,21 +1937,24 @@ onUnmounted(() => {
   align-items: flex-end;
   gap: 8px;
   -webkit-app-region: no-drag;
-  pointer-events: auto;
+  pointer-events: none;
   opacity: 0;
   transition: opacity 0.3s ease-in-out;
 }
 
 .input-container.input-visible {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .input-container:focus-within {
   opacity: 1 !important;
+  pointer-events: auto;
 }
 
 .input-container:hover {
   opacity: 1 !important;
+  pointer-events: auto;
 }
 
 .text-input {
