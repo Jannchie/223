@@ -50,9 +50,8 @@
     "provider": "github",
     "owner": "Jannchie",
     "repo": "223",
-    // draft: CI 构建后生成「草稿」Release，需在 GitHub 手动点击 Publish 后
-    //   自动更新才会对用户生效（可先验证产物）。
-    // 若想推 tag 后立即对所有用户可见，改为 "release"。
-    "releaseType": "draft"
+    // release: 推送 v* tag 后 CI 直接发布正式 Release，立即对所有用户可见，
+    //   自动更新随即生效。若想改回「先生成草稿、人工检查后再 Publish」，改为 "draft"。
+    "releaseType": "release"
   }
 }
