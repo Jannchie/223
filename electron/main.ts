@@ -3,7 +3,11 @@ import http from 'node:http'
 import path from 'node:path'
 // import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, protocol, safeStorage, screen, session, Tray } from 'electron'
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, protocol, safeStorage, screen, session, Tray } from 'electron'
+import electronUpdater from 'electron-updater'
+
+// electron-updater 是 CommonJS 模块，在 ESM 下通过 default import 解构
+const { autoUpdater } = electronUpdater
 
 // const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -44,6 +48,7 @@ let lastMousePosition = { x: -1, y: -1 } // 记录上次鼠标位置
 let staticServer: http.Server | null = null
 let serverPort = 0 // 动态分配的端口号
 let alwaysOnTopInterval: NodeJS.Timeout | null = null
+let updateDownloaded = false // 新版本是否已下载完成，等待重启安装
 
 // 截图相关变量
 let screenshotRoastTimer: NodeJS.Timeout | null = null
@@ -175,6 +180,9 @@ async function createWindow() {
 
   // 创建系统托盘
   createTray()
+
+  // 启动自动更新检查
+  setupAutoUpdater()
 }
 
 // 创建设置窗口
@@ -321,6 +329,16 @@ function createTray() {
       type: 'separator',
     },
     {
+      label: '检查更新',
+      type: 'normal',
+      click: () => {
+        checkForUpdatesManually()
+      },
+    },
+    {
+      type: 'separator',
+    },
+    {
       label: '退出',
       type: 'normal',
       click: () => {
@@ -343,6 +361,103 @@ function createTray() {
       }
     }
   })
+}
+
+// ---------- 自动更新（electron-updater）----------
+// 从 GitHub Releases 拉取新版本，静默下载，下载完成后提示用户重启安装
+function setupAutoUpdater() {
+  // 开发模式（有 dev server）不检查更新
+  if (VITE_DEV_SERVER_URL) {
+    return
+  }
+
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.logger = console
+
+  autoUpdater.on('error', (error) => {
+    console.error('自动更新出错:', error)
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    console.log('发现新版本:', info.version)
+  })
+
+  autoUpdater.on('update-not-available', () => {
+    console.log('当前已是最新版本')
+  })
+
+  autoUpdater.on('update-downloaded', async (info) => {
+    updateDownloaded = true
+    const result = await dialog.showMessageBox({
+      type: 'info',
+      buttons: ['立即重启', '稍后'],
+      defaultId: 0,
+      cancelId: 1,
+      title: '发现新版本',
+      message: `NiNiSan ${info.version} 已下载完成`,
+      detail: '重启应用即可完成更新。',
+    })
+    if (result.response === 0) {
+      autoUpdater.quitAndInstall()
+    }
+  })
+
+  // 启动后延迟检查，避免拖慢启动
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch((error) => {
+      console.error('检查更新失败:', error)
+    })
+  }, 3000)
+}
+
+// 手动检查更新（供托盘菜单调用）
+async function checkForUpdatesManually() {
+  if (VITE_DEV_SERVER_URL) {
+    await dialog.showMessageBox({
+      type: 'info',
+      message: '开发模式下不检查更新',
+    })
+    return
+  }
+
+  // 已下载完成，直接询问是否重启安装
+  if (updateDownloaded) {
+    const result = await dialog.showMessageBox({
+      type: 'info',
+      buttons: ['立即重启', '稍后'],
+      defaultId: 0,
+      cancelId: 1,
+      title: '更新已就绪',
+      message: '新版本已下载完成',
+      detail: '重启应用即可完成更新。',
+    })
+    if (result.response === 0) {
+      autoUpdater.quitAndInstall()
+    }
+    return
+  }
+
+  try {
+    const checkResult = await autoUpdater.checkForUpdates()
+    // 无更新时提示已是最新版本（有更新则会自动下载，由事件处理）
+    if (!checkResult || checkResult.updateInfo.version === app.getVersion()) {
+      await dialog.showMessageBox({
+        type: 'info',
+        title: '检查更新',
+        message: '当前已是最新版本',
+        detail: `版本 ${app.getVersion()}`,
+      })
+    }
+  }
+  catch (error) {
+    await dialog.showMessageBox({
+      type: 'error',
+      title: '检查更新',
+      message: '检查更新失败',
+      detail: String(error),
+    })
+  }
 }
 
 // 全局鼠标位置跟踪函数

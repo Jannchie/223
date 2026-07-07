@@ -12,6 +12,18 @@ export default defineConfig({
       main: {
         // Shortcut of `build.lib.entry`.
         entry: 'electron/main.ts',
+        vite: {
+          build: {
+            // electron-updater 需在运行时从 asar 内的 node_modules 加载，
+            // 不能被打包进 main.js，否则会破坏 app-update.yml 的路径解析
+            rollupOptions: {
+              external: ['electron-updater'],
+            },
+            rolldownOptions: {
+              external: ['electron-updater'],
+            },
+          },
+        },
       },
       preload: {
         // Shortcut of `build.rollupOptions.input`.
