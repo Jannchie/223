@@ -1,0 +1,28 @@
+/*
+ * HarmonyOS Sans SC（简体中文 + 拉丁），随应用打包。
+ * 使用华为官方原始未修改的 TTF 文件，符合许可协议「保持字体完整性、不得修改」的要求。
+ * 许可与来源见同目录 LICENSE-HarmonyOS-Sans.md。
+ */
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../assets/fonts/HarmonyOS_Sans_SC_Regular.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('../assets/fonts/HarmonyOS_Sans_SC_Medium.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'HarmonyOS Sans SC';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/HarmonyOS_Sans_SC_Bold.ttf') format('truetype');
+}
