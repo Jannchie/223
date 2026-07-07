@@ -203,34 +203,49 @@ onMounted(() => {
     <div class="editor-content">
       <div class="form-section">
         <div class="section-title">
+          <UIcon name="i-carbon-information" class="section-icon" />
           基本信息
         </div>
 
-        <UFormField label="角色名称" required :error="errors.name">
-          <UInput v-model="formData.name" placeholder="输入角色名称" />
-        </UFormField>
-
-        <UFormField label="角色描述">
-          <UInput v-model="formData.description" placeholder="简短描述这个角色" />
-        </UFormField>
+        <div class="avatar-row">
+          <UAvatar
+            :src="formData.avatar || undefined"
+            :alt="formData.name || '角色'"
+            icon="i-carbon-user-avatar"
+            size="xl"
+          />
+          <div class="avatar-fields">
+            <UFormField label="角色名称" required :error="errors.name">
+              <UInput v-model="formData.name" placeholder="输入角色名称" size="lg" class="w-full" />
+            </UFormField>
+            <UFormField label="角色描述">
+              <UInput v-model="formData.description" placeholder="简短描述这个角色" class="w-full" />
+            </UFormField>
+          </div>
+        </div>
 
         <UFormField label="Live2D 模型">
           <USelect
             v-if="!isCustomPath"
             v-model="formData.modelPath"
             :items="modelOptions"
+            icon="i-carbon-3d-cursor"
             placeholder="选择模型"
+            class="w-full"
           />
 
           <div v-else class="custom-path-input">
             <UInput
               v-model="customModelPath"
               placeholder="输入模型文件路径或 URL"
+              icon="i-carbon-link"
+              class="flex-1"
             />
             <UButton
               type="button"
               color="neutral"
-              variant="ghost"
+              variant="soft"
+              icon="i-carbon-undo"
               @click="isCustomPath = false; formData.modelPath = '06-v2.1024/06-v2.model3.json'"
             >
               返回预设
@@ -238,24 +253,28 @@ onMounted(() => {
           </div>
 
           <div v-if="formData.modelPath" class="model-path-display">
-            <small>当前模型路径: {{ formData.modelPath }}</small>
+            <UIcon name="i-carbon-location" class="path-icon" />
+            <small>{{ formData.modelPath }}</small>
           </div>
         </UFormField>
 
-        <UFormField label="头像路径">
-          <UInput v-model="formData.avatar" placeholder="/models/06-v2.1024/texture_00.png" />
+        <UFormField label="头像路径" description="可填本地纹理或图片 URL，留空使用默认头像">
+          <UInput v-model="formData.avatar" placeholder="/models/06-v2.1024/texture_00.png" icon="i-carbon-image" class="w-full" />
         </UFormField>
       </div>
 
       <div class="form-section">
         <div class="section-title">
-          系统提示词 *
+          <UIcon name="i-carbon-chat-bot" class="section-icon" />
+          系统提示词
+          <span class="section-required">*</span>
         </div>
         <UFormField :error="errors.systemPrompt">
           <UTextarea
             v-model="formData.systemPrompt"
-            :rows="15"
+            :rows="12"
             placeholder="输入系统提示词，定义角色的性格、说话风格等..."
+            class="w-full"
           />
         </UFormField>
       </div>
@@ -264,6 +283,7 @@ onMounted(() => {
         v-if="errors.general"
         color="error"
         variant="soft"
+        icon="i-carbon-warning-alt"
         title="操作失败"
         :description="errors.general"
       />
@@ -317,13 +337,42 @@ onMounted(() => {
 .form-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .section-title {
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--ui-text);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--ui-text-muted);
+}
+
+.section-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--ui-primary);
+}
+
+.section-required {
+  color: var(--ui-error);
+}
+
+.avatar-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.avatar-fields {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
 }
 
 .custom-path-input {
@@ -333,7 +382,20 @@ onMounted(() => {
 }
 
 .model-path-display {
-  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--ui-bg-muted);
+}
+
+.path-icon {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  color: var(--ui-text-muted);
 }
 
 .model-path-display small {

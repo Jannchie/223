@@ -51,11 +51,13 @@ const emit = defineEmits<{
 }>()
 
 const tabItems = [
-  { label: '角色管理', value: 'character', icon: 'i-carbon-user' },
-  { label: 'OpenAI 设置', value: 'openai', icon: 'i-carbon-application' },
+  { label: '角色管理', value: 'character', icon: 'i-carbon-user-avatar' },
+  { label: 'OpenAI 设置', value: 'openai', icon: 'i-carbon-api' },
   { label: '截图吐槽', value: 'roast', icon: 'i-carbon-chat' },
   { label: '目光跟踪', value: 'gaze', icon: 'i-carbon-view' },
 ]
+
+const activeTabMeta = computed(() => tabItems.find(t => t.value === props.activeTab) ?? tabItems[0])
 
 const activeTabModel = computed({
   get: () => props.activeTab,
@@ -79,10 +81,31 @@ function handleModalOpenChange(open: boolean) {
     @update:open="handleModalOpenChange"
   >
     <template #content>
-      <UCard>
-        <UTabs v-model="activeTabModel" :items="tabItems">
+      <UCard :ui="{ header: 'p-0 sm:px-0', body: 'p-0 sm:p-0' }">
+        <template #header>
+          <div class="flex items-center gap-3 px-5 py-4">
+            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
+              <UIcon name="i-carbon-settings" class="h-5 w-5" />
+            </span>
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-highlighted leading-tight">
+                设置
+              </p>
+              <p class="text-xs text-muted leading-tight">
+                {{ activeTabMeta.label }}
+              </p>
+            </div>
+          </div>
+        </template>
+
+        <UTabs
+          v-model="activeTabModel"
+          :items="tabItems"
+          variant="link"
+          :ui="{ list: 'px-5', content: '' }"
+        >
           <template #content="{ item }">
-            <div class="p-4 space-y-4">
+            <div class="p-5 space-y-4">
               <CharacterSettings
                 v-if="item.value === 'character'"
                 :current-character-id="currentCharacterId"
@@ -125,12 +148,12 @@ function handleModalOpenChange(open: boolean) {
         </UTabs>
 
         <template #footer>
-          <div class="flex gap-2 justify-end">
-            <UButton color="primary" @click="$emit('save')">
-              保存
-            </UButton>
+          <div class="flex gap-2 justify-end px-5 py-3">
             <UButton color="neutral" variant="ghost" @click="$emit('cancel')">
               取消
+            </UButton>
+            <UButton color="primary" icon="i-carbon-checkmark" @click="$emit('save')">
+              保存
             </UButton>
           </div>
         </template>
@@ -140,18 +163,39 @@ function handleModalOpenChange(open: boolean) {
 
   <div
     v-else-if="visible"
-    class="h-screen w-screen"
+    class="h-screen w-screen bg-default"
     @keydown.stop
     @keyup.stop
     @keypress.stop
   >
     <UCard
-      class="rounded-none flex flex-col h-full w-full"
-      :ui="{ body: 'flex-1 overflow-auto', footer: 'mt-auto' }"
+      class="rounded-none flex flex-col h-full w-full border-0"
+      :ui="{ header: 'p-0 sm:px-0', body: 'flex-1 overflow-auto p-0 sm:p-0', footer: 'mt-auto' }"
     >
-      <UTabs v-model="activeTabModel" :items="tabItems">
+      <template #header>
+        <div class="flex items-center gap-3 px-6 py-4 border-b border-default">
+          <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
+            <UIcon name="i-carbon-settings" class="h-5 w-5" />
+          </span>
+          <div class="min-w-0">
+            <p class="text-base font-semibold text-highlighted leading-tight">
+              NiNiSan 设置
+            </p>
+            <p class="text-xs text-muted leading-tight">
+              {{ activeTabMeta.label }}
+            </p>
+          </div>
+        </div>
+      </template>
+
+      <UTabs
+        v-model="activeTabModel"
+        :items="tabItems"
+        variant="link"
+        :ui="{ list: 'px-6', content: '' }"
+      >
         <template #content="{ item }">
-          <div class="p-4 space-y-4">
+          <div class="mx-auto w-full max-w-2xl p-6 space-y-4">
             <CharacterSettings
               v-if="item.value === 'character'"
               :current-character-id="currentCharacterId"
@@ -194,12 +238,12 @@ function handleModalOpenChange(open: boolean) {
       </UTabs>
 
       <template #footer>
-        <div class="flex gap-2 justify-end">
-          <UButton color="primary" @click="$emit('save')">
-            保存
-          </UButton>
+        <div class="flex gap-2 justify-end px-6 py-3 border-t border-default">
           <UButton color="neutral" variant="ghost" @click="$emit('cancel')">
             {{ cancelLabel }}
+          </UButton>
+          <UButton color="primary" icon="i-carbon-checkmark" @click="$emit('save')">
+            保存
           </UButton>
         </div>
       </template>

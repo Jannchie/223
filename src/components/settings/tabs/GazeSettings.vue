@@ -48,57 +48,70 @@ function updateRandomizeDuration(value: unknown) {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <UFormField label="启用目光锁定" description="定时让角色看向你">
+  <div class="space-y-5">
+    <UFormField
+      label="启用目光锁定"
+      description="定时让角色看向你，增加陪伴感"
+      class="flex items-center justify-between rounded-xl border border-default bg-elevated/40 p-4"
+    >
       <USwitch
         :model-value="gazeConfig.enabled"
         @update:model-value="updateEnabled"
       />
     </UFormField>
 
-    <UFormField label="锁定间隔">
-      <USelect
-        :model-value="gazeConfig.intervalMinutes"
-        :items="intervalOptions"
-        :disabled="!gazeConfig.enabled"
-        @update:model-value="updateIntervalMinutes"
-      />
-    </UFormField>
+    <div class="rounded-xl border border-default divide-y divide-default">
+      <UFormField label="锁定间隔" class="flex items-center justify-between gap-4 p-4">
+        <USelect
+          :model-value="gazeConfig.intervalMinutes"
+          :items="intervalOptions"
+          :disabled="!gazeConfig.enabled"
+          class="min-w-32"
+          @update:model-value="updateIntervalMinutes"
+        />
+      </UFormField>
 
-    <UFormField label="锁定时长">
-      <USelect
-        :model-value="gazeConfig.lockDurationSeconds"
-        :items="durationOptions"
-        :disabled="!gazeConfig.enabled"
-        @update:model-value="updateLockDurationSeconds"
-      />
-    </UFormField>
+      <UFormField label="锁定时长" class="flex items-center justify-between gap-4 p-4">
+        <USelect
+          :model-value="gazeConfig.lockDurationSeconds"
+          :items="durationOptions"
+          :disabled="!gazeConfig.enabled"
+          class="min-w-32"
+          @update:model-value="updateLockDurationSeconds"
+        />
+      </UFormField>
 
-    <UFormField
-      label="间隔随机化"
-      description="在基准值 50%-150% 范围内随机"
-    >
-      <USwitch
-        :model-value="gazeConfig.randomizeInterval"
-        :disabled="!gazeConfig.enabled"
-        @update:model-value="updateRandomizeInterval"
-      />
-    </UFormField>
+      <UFormField
+        label="间隔随机化"
+        description="在基准值 50%-150% 范围内随机"
+        class="flex items-center justify-between gap-4 p-4"
+      >
+        <USwitch
+          :model-value="gazeConfig.randomizeInterval"
+          :disabled="!gazeConfig.enabled"
+          @update:model-value="updateRandomizeInterval"
+        />
+      </UFormField>
 
-    <UFormField
-      label="时长随机化"
-      description="在基准值 70%-130% 范围内随机"
-    >
-      <USwitch
-        :model-value="gazeConfig.randomizeDuration"
-        :disabled="!gazeConfig.enabled"
-        @update:model-value="updateRandomizeDuration"
-      />
-    </UFormField>
+      <UFormField
+        label="时长随机化"
+        description="在基准值 70%-130% 范围内随机"
+        class="flex items-center justify-between gap-4 p-4"
+      >
+        <USwitch
+          :model-value="gazeConfig.randomizeDuration"
+          :disabled="!gazeConfig.enabled"
+          @update:model-value="updateRandomizeDuration"
+        />
+      </UFormField>
+    </div>
 
     <UButton
       :disabled="!gazeConfig.enabled"
       color="primary"
+      variant="soft"
+      icon="i-carbon-view"
+      block
       @click="emit('testLock')"
     >
       测试锁定

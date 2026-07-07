@@ -147,12 +147,37 @@ defineExpose({
 
 <template>
   <div class="flex flex-col gap-4">
-    <UFormField label="当前角色">
+    <div
+      v-if="currentCharacter"
+      class="flex items-center gap-3 rounded-xl border border-default bg-elevated/50 p-3"
+    >
+      <UAvatar
+        :src="currentCharacter.avatar || undefined"
+        :alt="currentCharacter.name"
+        icon="i-carbon-user-avatar"
+        size="lg"
+      />
+      <div class="min-w-0 flex-1">
+        <p class="truncate text-sm font-semibold text-highlighted">
+          {{ currentCharacter.name }}
+        </p>
+        <p class="truncate text-xs text-muted">
+          {{ currentCharacter.description || '暂无描述' }}
+        </p>
+      </div>
+      <UBadge color="primary" variant="soft" size="sm">
+        当前
+      </UBadge>
+    </div>
+
+    <UFormField label="切换角色">
       <USelect
         v-model="selectedId"
-        class="min-w-80"
+        class="w-full"
         :items="selectItems"
         :disabled="loading"
+        :loading="loading"
+        icon="i-carbon-user-multiple"
         placeholder="选择角色"
         @update:model-value="selectCharacterById"
       />
@@ -165,7 +190,7 @@ defineExpose({
       <UButton
         color="neutral"
         size="sm"
-        variant="ghost"
+        variant="soft"
         icon="i-carbon-edit"
         :disabled="!currentCharacter"
         @click="handleEdit"
@@ -175,8 +200,9 @@ defineExpose({
       <UButton
         color="error"
         size="sm"
-        variant="soft"
-        icon="i-carbon-delete"
+        variant="ghost"
+        icon="i-carbon-trash-can"
+        class="ml-auto"
         :disabled="!currentCharacter || characters.length <= 1"
         @click="handleDelete"
       >

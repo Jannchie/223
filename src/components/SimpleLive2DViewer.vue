@@ -1797,7 +1797,7 @@ onUnmounted(() => {
         @select="handleInputCursorMove"
       />
       <!-- 按钮容器 -->
-      <div class="button-container">
+      <div class="button-container" :class="{ pinned: isPinned }">
         <!-- Pin 按钮 -->
         <UButton
           class="pin-button"
@@ -1968,7 +1968,12 @@ onUnmounted(() => {
   -webkit-app-region: no-drag;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.3s ease-in-out;
+  transform: translateY(6px);
+  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1), transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.input-container.input-visible {
+  transform: translateY(0);
 }
 
 .input-container.input-visible {
@@ -1997,99 +2002,105 @@ onUnmounted(() => {
 }
 
 :deep(.text-input [data-slot="base"]) {
-  padding: 12px 16px;
+  padding: 12px 18px;
   width: 100%;
-  border: 1px solid var(--ui-border);
-  border-radius: 12px;
+  border: 1px solid color-mix(in oklab, var(--ui-border) 70%, transparent);
+  border-radius: 16px;
   font-size: 14px;
-  background: var(--ui-bg-elevated);
+  line-height: 1.5;
+  background: color-mix(in oklab, var(--ui-bg-elevated) 82%, transparent);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
   color: var(--ui-text);
-  caret-color: var(--ui-text);
+  caret-color: var(--ui-primary);
   outline: none;
+  box-shadow:
+    0 10px 30px -12px color-mix(in oklab, var(--ui-text) 30%, transparent),
+    0 1px 0 0 color-mix(in oklab, var(--ui-bg) 60%, transparent) inset;
   -webkit-app-region: no-drag;
   pointer-events: auto;
   box-sizing: border-box;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 :deep(.text-input [data-slot="base"]::placeholder) {
-  color: var(--ui-text-muted);
+  color: var(--ui-text-dimmed);
 }
 
 :deep(.text-input [data-slot="base"]:focus) {
-  border-color: var(--ui-primary);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ui-primary) 20%, transparent);
-  background: var(--ui-bg);
+  border-color: color-mix(in oklab, var(--ui-primary) 60%, transparent);
+  box-shadow:
+    0 0 0 3px color-mix(in oklab, var(--ui-primary) 22%, transparent),
+    0 12px 32px -12px color-mix(in oklab, var(--ui-primary) 45%, transparent);
+  background: color-mix(in oklab, var(--ui-bg-elevated) 92%, transparent);
 }
 
 :deep(.text-input [data-slot="base"]:disabled) {
-  background: var(--ui-bg-muted);
+  background: color-mix(in oklab, var(--ui-bg-muted) 70%, transparent);
   cursor: not-allowed;
 }
 
 /* 按钮容器样式 */
 .button-container {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
+  padding: 4px;
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--ui-bg-elevated) 78%, transparent);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid color-mix(in oklab, var(--ui-border) 60%, transparent);
+  box-shadow: 0 8px 24px -12px color-mix(in oklab, var(--ui-text) 30%, transparent);
+  transition: background 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, padding 0.2s ease;
+}
+
+/* Pin 状态下只剩单个按钮，去除容器多余的玻璃背景 */
+.button-container.pinned {
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* Pin 按钮样式 */
-.pin-button {
-  width: 32px;
-  height: 32px;
+.pin-button,
+.settings-button {
+  width: 30px;
+  height: 30px;
   padding: 0;
   min-width: 0;
   border: none;
-  border-radius: 12px;
-  background: var(--ui-bg-elevated);
-  color: var(--ui-text);
-  font-size: 16px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ui-text-muted);
+  font-size: 15px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
   -webkit-app-region: no-drag;
   pointer-events: auto;
 }
 
-.pin-button:hover {
-  background: var(--ui-bg);
-  transform: scale(1.05);
+.pin-button:hover,
+.settings-button:hover {
+  background: color-mix(in oklab, var(--ui-primary) 14%, transparent);
+  color: var(--ui-primary);
+  transform: translateY(-1px);
 }
 
 .pin-button.pinned {
-  background: color-mix(in oklab, var(--ui-error) 90%, transparent);
+  background: color-mix(in oklab, var(--ui-error) 92%, transparent);
   color: var(--ui-text-inverted);
 }
 
 .pin-button.pinned:hover {
   background: var(--ui-error);
-}
-
-/* 设置按钮样式 */
-.settings-button {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  min-width: 0;
-  border: none;
-  border-radius: 12px;
-  background: var(--ui-bg-elevated);
-  color: var(--ui-text);
-  font-size: 16px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  -webkit-app-region: no-drag;
-  pointer-events: auto;
-}
-
-.settings-button:hover {
-  background: var(--ui-bg);
-  transform: scale(1.05);
+  color: var(--ui-text-inverted);
 }
 
 /* 对话气泡样式 */
@@ -2098,46 +2109,55 @@ onUnmounted(() => {
   z-index: 200;
   max-width: 300px;
   min-width: 150px;
+  margin-top: -10px;
   pointer-events: none;
   -webkit-app-region: no-drag;
   transform-origin: center bottom;
 }
 
 .bubble-content {
-  background: var(--ui-bg-elevated);
-  border: 1px solid var(--ui-border);
-  border-radius: 18px;
-  padding: 12px 16px;
+  animation: bubbleIn 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  background: color-mix(in oklab, var(--ui-bg-elevated) 88%, transparent);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  border: 1px solid color-mix(in oklab, var(--ui-border) 65%, transparent);
+  border-radius: 20px;
+  padding: 12px 18px;
   font-size: 14px;
-  line-height: 1.4;
-  color: var(--ui-text);
+  line-height: 1.55;
+  color: var(--ui-text-highlighted);
   word-wrap: break-word;
   white-space: pre-wrap;
   position: relative;
+  box-shadow:
+    0 16px 40px -16px color-mix(in oklab, var(--ui-text) 35%, transparent),
+    0 2px 6px -2px color-mix(in oklab, var(--ui-text) 15%, transparent);
 }
 
 .bubble-arrow {
   position: absolute;
-  bottom: -8px;
+  bottom: -7px;
   left: 50%;
-  transform: translateX(-50%);
-  width: 0;
-  height: 0;
-  border-left: 8px solid transparent;
-  border-right: 8px solid transparent;
-  border-top: 8px solid var(--ui-bg-elevated);
+  transform: translateX(-50%) rotate(45deg);
+  width: 14px;
+  height: 14px;
+  background: color-mix(in oklab, var(--ui-bg-elevated) 88%, transparent);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  border-right: 1px solid color-mix(in oklab, var(--ui-border) 65%, transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--ui-border) 65%, transparent);
+  border-bottom-right-radius: 4px;
 }
 
-.bubble-arrow::before {
-  content: '';
-  position: absolute;
-  top: -9px;
-  left: -8px;
-  width: 0;
-  height: 0;
-  border-left: 8px solid transparent;
-  border-right: 8px solid transparent;
-  border-top: 8px solid var(--ui-border);
+@keyframes bubbleIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* 吐槽气泡样式 */
@@ -2146,57 +2166,44 @@ onUnmounted(() => {
   z-index: 201;
   max-width: 350px;
   min-width: 150px;
+  margin-top: -10px;
   pointer-events: none;
   -webkit-app-region: no-drag;
-  animation: roastBubbleIn 0.5s ease-out;
   transform-origin: center bottom;
 }
 
 .roast-bubble-content {
-  background: var(--ui-bg-muted);
-  border: 1px solid var(--ui-border);
-  border-radius: 18px;
-  padding: 12px 16px;
+  animation: bubbleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  background: color-mix(in oklab, var(--ui-color-warning-500) 14%, var(--ui-bg-elevated));
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  border: 1px solid color-mix(in oklab, var(--ui-color-warning-400) 35%, transparent);
+  border-radius: 20px;
+  padding: 12px 18px;
   font-size: 14px;
-  line-height: 1.4;
-  color: var(--ui-text-toned);
+  line-height: 1.55;
+  color: var(--ui-text-highlighted);
   word-wrap: break-word;
   white-space: pre-wrap;
   position: relative;
+  box-shadow:
+    0 16px 40px -16px color-mix(in oklab, var(--ui-color-warning-500) 40%, transparent),
+    0 2px 6px -2px color-mix(in oklab, var(--ui-text) 15%, transparent);
 }
 
 .roast-bubble-arrow {
   position: absolute;
-  bottom: -8px;
+  bottom: -7px;
   left: 50%;
-  transform: translateX(-50%);
-  width: 0;
-  height: 0;
-  border-left: 8px solid transparent;
-  border-right: 8px solid transparent;
-  border-top: 8px solid var(--ui-bg-muted);
-}
-
-.roast-bubble-arrow::before {
-  content: '';
-  position: absolute;
-  top: -9px;
-  left: -8px;
-  width: 0;
-  height: 0;
-  border-left: 8px solid transparent;
-  border-right: 8px solid transparent;
-  border-top: 8px solid var(--ui-border);
-}
-
-/* 吐槽气泡动画 */
-@keyframes roastBubbleIn {
-  0% {
-    transform: translate(-50%, -100%) scale(0.8);
-  }
-  100% {
-    transform: translate(-50%, -100%) scale(1);
-  }
+  transform: translateX(-50%) rotate(45deg);
+  width: 14px;
+  height: 14px;
+  background: color-mix(in oklab, var(--ui-color-warning-500) 14%, var(--ui-bg-elevated));
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  border-right: 1px solid color-mix(in oklab, var(--ui-color-warning-400) 35%, transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--ui-color-warning-400) 35%, transparent);
+  border-bottom-right-radius: 4px;
 }
 
 /* 语音识别状态指示器样式 */
@@ -2208,12 +2215,14 @@ onUnmounted(() => {
   justify-content: center;
   gap: 8px;
   padding: 8px 16px;
-  background: var(--ui-bg-inverted);
+  background: color-mix(in oklab, var(--ui-bg-inverted) 90%, transparent);
   color: var(--ui-text-inverted);
-  border-radius: 20px;
-  font-size: 14px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow: 0 10px 30px -12px color-mix(in oklab, var(--ui-text) 45%, transparent);
   pointer-events: none;
   -webkit-app-region: no-drag;
   animation: fadeInOut 0.3s ease-in-out;

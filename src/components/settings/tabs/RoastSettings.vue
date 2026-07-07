@@ -43,80 +43,96 @@ function updateStyle(value: unknown) {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <UFormField label="自动吐槽">
-      <USwitch
-        :model-value="roastConfig.enabled"
-        @update:model-value="() => emit('toggleAuto')"
-      />
-    </UFormField>
+  <div class="space-y-5">
+    <div class="rounded-xl border border-default divide-y divide-default">
+      <UFormField
+        label="自动吐槽"
+        description="按设定间隔自动截图并生成吐槽"
+        class="flex items-center justify-between p-4"
+      >
+        <USwitch
+          :model-value="roastConfig.enabled"
+          @update:model-value="() => emit('toggleAuto')"
+        />
+      </UFormField>
 
-    <UFormField label="吐槽间隔">
-      <USelect
-        :model-value="roastConfig.interval"
-        :items="intervalOptions"
-        @update:model-value="updateInterval"
-      />
-    </UFormField>
+      <UFormField label="吐槽间隔" class="flex items-center justify-between gap-4 p-4">
+        <USelect
+          :model-value="roastConfig.interval"
+          :items="intervalOptions"
+          :disabled="!roastConfig.enabled"
+          class="min-w-32"
+          @update:model-value="updateInterval"
+        />
+      </UFormField>
 
-    <UFormField label="吐槽风格">
-      <USelect
-        :model-value="roastConfig.style"
-        :items="styleOptions"
-        @update:model-value="updateStyle"
-      />
-    </UFormField>
+      <UFormField label="吐槽风格" class="flex items-center justify-between gap-4 p-4">
+        <USelect
+          :model-value="roastConfig.style"
+          :items="styleOptions"
+          class="min-w-44"
+          @update:model-value="updateStyle"
+        />
+      </UFormField>
+    </div>
 
-    <UCard variant="soft">
-      <template #header>
-        <div class="font-medium">
-          手动触发
-        </div>
-      </template>
-      <div class="flex items-center gap-3">
-        <UButton :loading="isRoasting" color="primary" @click="emit('trigger')">
-          {{ isRoasting ? '正在吐槽...' : '立即吐槽' }}
-        </UButton>
-        <div class="flex items-center gap-2">
-          <span>快捷键</span>
-          <UKbd value="F7" />
-        </div>
+    <div class="flex items-center gap-3 rounded-xl border border-default bg-elevated/40 p-4">
+      <UButton
+        :loading="isRoasting"
+        color="primary"
+        icon="i-carbon-camera"
+        @click="emit('trigger')"
+      >
+        {{ isRoasting ? '正在吐槽...' : '立即吐槽' }}
+      </UButton>
+      <div class="ml-auto flex items-center gap-2 text-sm text-muted">
+        <span>快捷键</span>
+        <UKbd value="F7" />
       </div>
-    </UCard>
+    </div>
 
     <UAlert
       v-if="currentRoast"
+      icon="i-carbon-chat"
       title="最新吐槽"
       :description="currentRoast.text"
       color="warning"
       variant="soft"
     >
       <template #actions>
-        <span>{{ new Date(currentRoast.timestamp).toLocaleString() }}</span>
+        <span class="text-xs text-muted">{{ new Date(currentRoast.timestamp).toLocaleString() }}</span>
       </template>
     </UAlert>
 
-    <UCard v-if="roastHistory.length > 0" variant="soft">
-      <template #header>
-        <div class="flex items-center justify-between">
-          <div class="font-medium">
-            吐槽历史
-          </div>
-          <UButton color="neutral" variant="ghost" size="xs" @click="emit('clearHistory')">
-            清空
-          </UButton>
-        </div>
-      </template>
+    <div v-if="roastHistory.length > 0" class="space-y-2">
+      <div class="flex items-center justify-between px-1">
+        <p class="text-sm font-medium text-highlighted">
+          吐槽历史
+        </p>
+        <UButton
+          color="neutral"
+          variant="ghost"
+          size="xs"
+          icon="i-carbon-trash-can"
+          @click="emit('clearHistory')"
+        >
+          清空
+        </UButton>
+      </div>
       <div class="space-y-2">
-        <div v-for="roast in roastHistory.slice(0, 5)" :key="roast.timestamp">
-          <div>
+        <div
+          v-for="roast in roastHistory.slice(0, 5)"
+          :key="roast.timestamp"
+          class="rounded-lg border border-default bg-elevated/40 p-3"
+        >
+          <p class="text-sm text-default leading-relaxed">
             {{ roast.text }}
-          </div>
-          <div>
+          </p>
+          <p class="mt-1.5 text-xs text-muted">
             {{ new Date(roast.timestamp).toLocaleString() }}
-          </div>
+          </p>
         </div>
       </div>
-    </UCard>
+    </div>
   </div>
 </template>
