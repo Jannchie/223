@@ -75,11 +75,12 @@ async function loadCharacters() {
 }
 
 // Select character
-function selectCharacterById(id: string | null) {
-  if (!id) {
+function selectCharacterById(id: string | number | null) {
+  if (id == null || id === '') {
     return
   }
-  const character = characters.value.find(c => String((c as any).id) === id)
+  const sid = String(id)
+  const character = characters.value.find(c => String((c as any).id) === sid)
   if (!character) {
     return
   }
@@ -151,7 +152,7 @@ defineExpose({
       v-if="currentCharacter"
       class="flex items-center gap-3 rounded-xl border border-default bg-elevated p-3"
     >
-      <UAvatar
+      <Avatar
         :src="currentCharacter.avatar || undefined"
         :alt="currentCharacter.name"
         icon="i-carbon-user-avatar"
@@ -165,13 +166,13 @@ defineExpose({
           {{ currentCharacter.description || '暂无描述' }}
         </p>
       </div>
-      <UBadge color="primary" variant="soft" size="sm">
+      <Badge color="primary" variant="soft" size="sm">
         当前
-      </UBadge>
+      </Badge>
     </div>
 
-    <UFormField label="切换角色">
-      <USelect
+    <FormField label="切换角色">
+      <Select
         v-model="selectedId"
         class="w-full"
         :items="selectItems"
@@ -181,13 +182,13 @@ defineExpose({
         placeholder="选择角色"
         @update:model-value="selectCharacterById"
       />
-    </UFormField>
+    </FormField>
 
     <div class="flex gap-2 flex-wrap">
-      <UButton color="primary" size="sm" icon="i-carbon-add" @click="handleCreate">
+      <Button color="primary" size="sm" icon="i-carbon-add" @click="handleCreate">
         新建角色
-      </UButton>
-      <UButton
+      </Button>
+      <Button
         color="neutral"
         size="sm"
         variant="soft"
@@ -196,8 +197,8 @@ defineExpose({
         @click="handleEdit"
       >
         编辑
-      </UButton>
-      <UButton
+      </Button>
+      <Button
         color="error"
         size="sm"
         variant="ghost"
@@ -207,7 +208,7 @@ defineExpose({
         @click="handleDelete"
       >
         删除
-      </UButton>
+      </Button>
     </div>
   </div>
 </template>

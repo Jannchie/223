@@ -181,13 +181,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <UCard class="character-editor">
+  <Card class="character-editor">
     <template #header>
       <div class="editor-header">
         <div class="editor-title">
           {{ title }}
         </div>
-        <UButton
+        <Button
           v-if="isEditMode"
           color="error"
           variant="soft"
@@ -196,36 +196,36 @@ onMounted(() => {
           @click="deleteCharacter"
         >
           删除
-        </UButton>
+        </Button>
       </div>
     </template>
 
     <div class="editor-content">
       <div class="form-section">
         <div class="section-title">
-          <UIcon name="i-carbon-information" class="section-icon" />
+          <Icon name="i-carbon-information" class="section-icon" />
           基本信息
         </div>
 
         <div class="avatar-row">
-          <UAvatar
+          <Avatar
             :src="formData.avatar || undefined"
             :alt="formData.name || '角色'"
             icon="i-carbon-user-avatar"
             size="xl"
           />
           <div class="avatar-fields">
-            <UFormField label="角色名称" required :error="errors.name">
-              <UInput v-model="formData.name" placeholder="输入角色名称" size="lg" class="w-full" />
-            </UFormField>
-            <UFormField label="角色描述">
-              <UInput v-model="formData.description" placeholder="简短描述这个角色" class="w-full" />
-            </UFormField>
+            <FormField label="角色名称" required :error="errors.name">
+              <Input v-model="formData.name" placeholder="输入角色名称" size="lg" class="w-full" />
+            </FormField>
+            <FormField label="角色描述">
+              <Input v-model="formData.description" placeholder="简短描述这个角色" class="w-full" />
+            </FormField>
           </div>
         </div>
 
-        <UFormField label="Live2D 模型">
-          <USelect
+        <FormField label="Live2D 模型">
+          <Select
             v-if="!isCustomPath"
             v-model="formData.modelPath"
             :items="modelOptions"
@@ -235,13 +235,13 @@ onMounted(() => {
           />
 
           <div v-else class="custom-path-input">
-            <UInput
+            <Input
               v-model="customModelPath"
               placeholder="输入模型文件路径或 URL"
               icon="i-carbon-link"
               class="flex-1"
             />
-            <UButton
+            <Button
               type="button"
               color="neutral"
               variant="soft"
@@ -249,37 +249,37 @@ onMounted(() => {
               @click="isCustomPath = false; formData.modelPath = '06-v2.1024/06-v2.model3.json'"
             >
               返回预设
-            </UButton>
+            </Button>
           </div>
 
           <div v-if="formData.modelPath" class="model-path-display">
-            <UIcon name="i-carbon-location" class="path-icon" />
+            <Icon name="i-carbon-location" class="path-icon" />
             <small>{{ formData.modelPath }}</small>
           </div>
-        </UFormField>
+        </FormField>
 
-        <UFormField label="头像路径" description="可填本地纹理或图片 URL，留空使用默认头像">
-          <UInput v-model="formData.avatar" placeholder="/models/06-v2.1024/texture_00.png" icon="i-carbon-image" class="w-full" />
-        </UFormField>
+        <FormField label="头像路径" description="可填本地纹理或图片 URL，留空使用默认头像">
+          <Input v-model="formData.avatar" placeholder="/models/06-v2.1024/texture_00.png" icon="i-carbon-image" class="w-full" />
+        </FormField>
       </div>
 
       <div class="form-section">
         <div class="section-title">
-          <UIcon name="i-carbon-chat-bot" class="section-icon" />
+          <Icon name="i-carbon-chat-bot" class="section-icon" />
           系统提示词
           <span class="section-required">*</span>
         </div>
-        <UFormField :error="errors.systemPrompt">
-          <UTextarea
+        <FormField :error="errors.systemPrompt">
+          <Textarea
             v-model="formData.systemPrompt"
             :rows="12"
             placeholder="输入系统提示词，定义角色的性格、说话风格等..."
             class="w-full"
           />
-        </UFormField>
+        </FormField>
       </div>
 
-      <UAlert
+      <Alert
         v-if="errors.general"
         color="error"
         variant="soft"
@@ -291,15 +291,15 @@ onMounted(() => {
 
     <template #footer>
       <div class="editor-actions">
-        <UButton color="neutral" variant="ghost" :disabled="loading" @click="cancelEdit">
+        <Button color="neutral" variant="ghost" :disabled="loading" @click="cancelEdit">
           取消
-        </UButton>
-        <UButton color="primary" :loading="loading" @click="saveCharacter">
+        </Button>
+        <Button color="primary" :loading="loading" @click="saveCharacter">
           {{ loading ? '保存中...' : '保存' }}
-        </UButton>
+        </Button>
       </div>
     </template>
-  </UCard>
+  </Card>
 </template>
 
 <style scoped>

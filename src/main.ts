@@ -1,6 +1,6 @@
-import ui from '@nuxt/ui/vue-plugin'
 import { createApp } from 'vue'
 import App from './App.vue'
+import ui from './components/ui'
 import './style.css'
 
 const urlParams = new URLSearchParams(globalThis.location.search)

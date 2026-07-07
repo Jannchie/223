@@ -102,7 +102,7 @@ function handleModalOpenChange(open: boolean) {
 
 <template>
   <!-- 弹窗形态 -->
-  <UModal
+  <Modal
     v-if="!embedded"
     :open="visible"
     :close="false"
@@ -113,7 +113,7 @@ function handleModalOpenChange(open: boolean) {
       <div class="flex max-h-[85vh] flex-col bg-default">
         <header class="flex items-center gap-3 px-5 pb-4 pt-5">
           <span class="flex size-9 items-center justify-center rounded-xl bg-primary text-inverted">
-            <UIcon name="i-carbon-settings" class="size-5" />
+            <Icon name="i-carbon-settings" class="size-5" />
           </span>
           <h1 class="text-base font-semibold text-highlighted">
             设置
@@ -121,7 +121,7 @@ function handleModalOpenChange(open: boolean) {
         </header>
 
         <div class="px-5 pb-1">
-          <UTabs
+          <Tabs
             v-model="activeTabModel"
             :items="tabItems"
             :content="false"
@@ -137,16 +137,16 @@ function handleModalOpenChange(open: boolean) {
         </main>
 
         <footer class="flex items-center justify-end gap-2 border-t border-default px-5 py-4">
-          <UButton color="neutral" variant="ghost" size="lg" @click="$emit('cancel')">
+          <Button color="neutral" variant="ghost" size="lg" @click="$emit('cancel')">
             取消
-          </UButton>
-          <UButton color="primary" size="lg" icon="i-carbon-checkmark" @click="$emit('save')">
+          </Button>
+          <Button color="primary" size="lg" icon="i-carbon-checkmark" @click="$emit('save')">
             保存
-          </UButton>
+          </Button>
         </footer>
       </div>
     </template>
-  </UModal>
+  </Modal>
 
   <!-- 独立设置窗口形态 -->
   <div
@@ -158,7 +158,7 @@ function handleModalOpenChange(open: boolean) {
   >
     <header class="flex items-center gap-3 px-6 pb-4 pt-5">
       <span class="flex size-10 items-center justify-center rounded-xl bg-primary text-inverted">
-        <UIcon name="i-carbon-settings" class="size-5" />
+        <Icon name="i-carbon-settings" class="size-5" />
       </span>
       <div class="min-w-0">
         <h1 class="text-base font-semibold leading-tight text-highlighted">
@@ -171,7 +171,7 @@ function handleModalOpenChange(open: boolean) {
     </header>
 
     <div class="px-6 pb-1">
-      <UTabs
+      <Tabs
         v-model="activeTabModel"
         :items="tabItems"
         :content="false"
@@ -188,12 +188,12 @@ function handleModalOpenChange(open: boolean) {
     </main>
 
     <footer class="flex items-center justify-end gap-2 border-t border-default px-6 py-4">
-      <UButton color="neutral" variant="ghost" size="lg" @click="$emit('cancel')">
+      <Button color="neutral" variant="ghost" size="lg" @click="$emit('cancel')">
         {{ cancelLabel }}
-      </UButton>
-      <UButton color="primary" size="lg" icon="i-carbon-checkmark" @click="$emit('save')">
+      </Button>
+      <Button color="primary" size="lg" icon="i-carbon-checkmark" @click="$emit('save')">
         保存
-      </UButton>
+      </Button>
     </footer>
   </div>
 </template>

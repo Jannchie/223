@@ -36,9 +36,9 @@ function update(field: 'name' | 'apiKey' | 'baseURL' | 'model', value: unknown) 
         <p class="text-sm font-medium text-highlighted">
           后端列表
         </p>
-        <UButton size="xs" variant="soft" icon="i-carbon-add" @click="handleAdd">
+        <Button size="xs" variant="soft" icon="i-carbon-add" @click="handleAdd">
           新建后端
-        </UButton>
+        </Button>
       </div>
 
       <div class="space-y-2">
@@ -52,7 +52,7 @@ function update(field: 'name' | 'apiKey' | 'baseURL' | 'model', value: unknown) 
             : 'border-default hover:border-accented'"
           @click="selectBackend(backend.id)"
         >
-          <UIcon
+          <Icon
             :name="backend.id === activeId ? 'i-carbon-radio-button-checked' : 'i-carbon-radio-button'"
             class="size-5 shrink-0"
             :class="backend.id === activeId ? 'text-primary' : 'text-dimmed'"
@@ -65,9 +65,9 @@ function update(field: 'name' | 'apiKey' | 'baseURL' | 'model', value: unknown) 
               {{ backend.baseURL || '默认地址' }}
             </p>
           </div>
-          <UBadge v-if="backend.id === activeId" color="primary" variant="soft" size="sm">
+          <Badge v-if="backend.id === activeId" color="primary" variant="soft" size="sm">
             使用中
-          </UBadge>
+          </Badge>
         </button>
       </div>
     </div>
@@ -77,7 +77,7 @@ function update(field: 'name' | 'apiKey' | 'baseURL' | 'model', value: unknown) 
         <p class="text-sm font-medium text-highlighted">
           编辑「{{ active.name || '未命名后端' }}」
         </p>
-        <UButton
+        <Button
           size="xs"
           color="error"
           variant="ghost"
@@ -86,21 +86,21 @@ function update(field: 'name' | 'apiKey' | 'baseURL' | 'model', value: unknown) 
           @click="handleRemove"
         >
           删除
-        </UButton>
+        </Button>
       </div>
 
-      <UFormField label="名称">
-        <UInput
+      <FormField label="名称">
+        <Input
           :model-value="active.name"
           placeholder="给这个后端起个名字"
           icon="i-carbon-tag"
           class="w-full"
           @update:model-value="(v: unknown) => update('name', v)"
         />
-      </UFormField>
+      </FormField>
 
-      <UFormField label="API Key" description="密钥仅保存在本地" required>
-        <UInput
+      <FormField label="API Key" description="密钥仅保存在本地" required>
+        <Input
           :model-value="active.apiKey"
           type="password"
           placeholder="sk-..."
@@ -109,27 +109,27 @@ function update(field: 'name' | 'apiKey' | 'baseURL' | 'model', value: unknown) 
           class="w-full"
           @update:model-value="(v: unknown) => update('apiKey', v)"
         />
-      </UFormField>
+      </FormField>
 
-      <UFormField label="Base URL" description="兼容 OpenAI 协议的服务地址">
-        <UInput
+      <FormField label="Base URL" description="兼容 OpenAI 协议的服务地址">
+        <Input
           :model-value="active.baseURL"
           placeholder="https://api.openai.com/v1"
           icon="i-carbon-link"
           class="w-full"
           @update:model-value="(v: unknown) => update('baseURL', v)"
         />
-      </UFormField>
+      </FormField>
 
-      <UFormField label="模型">
-        <UInput
+      <FormField label="模型">
+        <Input
           :model-value="active.model"
           placeholder="gpt-4.1-mini"
           icon="i-carbon-machine-learning-model"
           class="w-full"
           @update:model-value="(v: unknown) => update('model', v)"
         />
-      </UFormField>
+      </FormField>
     </div>
   </div>
 </template>

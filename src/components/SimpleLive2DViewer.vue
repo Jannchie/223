@@ -1838,7 +1838,7 @@ onUnmounted(() => {
       :class="{ 'input-visible': controlsVisible }"
       :style="inputContainerStyle"
     >
-      <UInput
+      <Input
         v-model="inputText"
         type="text"
         :placeholder="isTyping ? '正在思考...' : '请输入内容（回车发送）...'"
@@ -1856,7 +1856,7 @@ onUnmounted(() => {
       <!-- 按钮容器 -->
       <div class="button-container" :class="{ pinned: isPinned }">
         <!-- Pin 按钮 -->
-        <UButton
+        <Button
           class="pin-button"
           :class="{ pinned: isPinned }"
           :title="isPinned ? '取消固定' : '固定位置'"
@@ -1869,7 +1869,7 @@ onUnmounted(() => {
         />
 
         <!-- 设置按钮 -->
-        <UButton
+        <Button
           v-if="!isPinned"
           class="settings-button"
           title="打开设置"
@@ -1970,9 +1970,10 @@ onUnmounted(() => {
   />
 
   <!-- 人设编辑器弹窗 -->
-  <UModal
+  <Modal
     :open="showCharacterEditor"
     :close="false"
+    :ui="{ content: 'max-w-[820px]' }"
     @update:open="handleCharacterEditorOpenChange"
   >
     <template #content>
@@ -1984,7 +1985,7 @@ onUnmounted(() => {
         @delete="handleCharacterEditorDelete"
       />
     </template>
-  </UModal>
+  </Modal>
 </template>
 
 <style scoped>

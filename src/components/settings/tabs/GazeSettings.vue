@@ -49,64 +49,64 @@ function updateRandomizeDuration(value: unknown) {
 
 <template>
   <div class="space-y-5">
-    <UFormField
+    <FormField
       label="启用目光锁定"
       description="定时让角色看向你，增加陪伴感"
       class="flex items-center justify-between rounded-xl border border-default bg-elevated p-4"
     >
-      <USwitch
+      <Switch
         :model-value="gazeConfig.enabled"
         @update:model-value="updateEnabled"
       />
-    </UFormField>
+    </FormField>
 
     <div class="rounded-xl border border-default divide-y divide-default">
-      <UFormField label="锁定间隔" class="flex items-center justify-between gap-4 p-4">
-        <USelect
+      <FormField label="锁定间隔" class="flex items-center justify-between gap-4 p-4">
+        <Select
           :model-value="gazeConfig.intervalMinutes"
           :items="intervalOptions"
           :disabled="!gazeConfig.enabled"
           class="min-w-32"
           @update:model-value="updateIntervalMinutes"
         />
-      </UFormField>
+      </FormField>
 
-      <UFormField label="锁定时长" class="flex items-center justify-between gap-4 p-4">
-        <USelect
+      <FormField label="锁定时长" class="flex items-center justify-between gap-4 p-4">
+        <Select
           :model-value="gazeConfig.lockDurationSeconds"
           :items="durationOptions"
           :disabled="!gazeConfig.enabled"
           class="min-w-32"
           @update:model-value="updateLockDurationSeconds"
         />
-      </UFormField>
+      </FormField>
 
-      <UFormField
+      <FormField
         label="间隔随机化"
         description="在基准值 50%-150% 范围内随机"
         class="flex items-center justify-between gap-4 p-4"
       >
-        <USwitch
+        <Switch
           :model-value="gazeConfig.randomizeInterval"
           :disabled="!gazeConfig.enabled"
           @update:model-value="updateRandomizeInterval"
         />
-      </UFormField>
+      </FormField>
 
-      <UFormField
+      <FormField
         label="时长随机化"
         description="在基准值 70%-130% 范围内随机"
         class="flex items-center justify-between gap-4 p-4"
       >
-        <USwitch
+        <Switch
           :model-value="gazeConfig.randomizeDuration"
           :disabled="!gazeConfig.enabled"
           @update:model-value="updateRandomizeDuration"
         />
-      </UFormField>
+      </FormField>
     </div>
 
-    <UButton
+    <Button
       :disabled="!gazeConfig.enabled"
       color="primary"
       variant="soft"
@@ -115,6 +115,6 @@ function updateRandomizeDuration(value: unknown) {
       @click="emit('testLock')"
     >
       测试锁定
-    </UButton>
+    </Button>
   </div>
 </template>

@@ -3,11 +3,6 @@
     "composite": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "paths": {
-      "#build/ui": [
-        "./node_modules/.nuxt-ui/ui"
-      ]
-    },
     "strict": true,
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true

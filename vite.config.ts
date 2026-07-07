@@ -1,5 +1,5 @@
 import path from 'node:path'
-import ui from '@nuxt/ui/vite'
+import tailwindcss from '@tailwindcss/vite'
 import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vite'
 import electron from 'vite-plugin-electron/simple'
@@ -7,19 +7,7 @@ import electron from 'vite-plugin-electron/simple'
 export default defineConfig({
   plugins: [
     vue(),
-    ui({
-      ui: {
-        colors: {
-          primary: 'teal',
-          neutral: 'zinc',
-        },
-        button: {
-          slots: {
-            base: 'rounded-lg font-medium',
-          },
-        },
-      },
-    }),
+    tailwindcss(),
     electron({
       main: {
         // Shortcut of `build.lib.entry`.

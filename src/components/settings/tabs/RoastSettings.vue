@@ -45,53 +45,53 @@ function updateStyle(value: unknown) {
 <template>
   <div class="space-y-5">
     <div class="rounded-xl border border-default divide-y divide-default">
-      <UFormField
+      <FormField
         label="自动吐槽"
         description="按设定间隔自动截图并生成吐槽"
         class="flex items-center justify-between p-4"
       >
-        <USwitch
+        <Switch
           :model-value="roastConfig.enabled"
           @update:model-value="() => emit('toggleAuto')"
         />
-      </UFormField>
+      </FormField>
 
-      <UFormField label="吐槽间隔" class="flex items-center justify-between gap-4 p-4">
-        <USelect
+      <FormField label="吐槽间隔" class="flex items-center justify-between gap-4 p-4">
+        <Select
           :model-value="roastConfig.interval"
           :items="intervalOptions"
           :disabled="!roastConfig.enabled"
           class="min-w-32"
           @update:model-value="updateInterval"
         />
-      </UFormField>
+      </FormField>
 
-      <UFormField label="吐槽风格" class="flex items-center justify-between gap-4 p-4">
-        <USelect
+      <FormField label="吐槽风格" class="flex items-center justify-between gap-4 p-4">
+        <Select
           :model-value="roastConfig.style"
           :items="styleOptions"
           class="min-w-44"
           @update:model-value="updateStyle"
         />
-      </UFormField>
+      </FormField>
     </div>
 
     <div class="flex items-center gap-3 rounded-xl border border-default bg-elevated p-4">
-      <UButton
+      <Button
         :loading="isRoasting"
         color="primary"
         icon="i-carbon-camera"
         @click="emit('trigger')"
       >
         {{ isRoasting ? '正在吐槽...' : '立即吐槽' }}
-      </UButton>
+      </Button>
       <div class="ml-auto flex items-center gap-2 text-sm text-muted">
         <span>快捷键</span>
-        <UKbd value="F7" />
+        <Kbd value="F7" />
       </div>
     </div>
 
-    <UAlert
+    <Alert
       v-if="currentRoast"
       icon="i-carbon-chat"
       title="最新吐槽"
@@ -102,14 +102,14 @@ function updateStyle(value: unknown) {
       <template #actions>
         <span class="text-xs text-muted">{{ new Date(currentRoast.timestamp).toLocaleString() }}</span>
       </template>
-    </UAlert>
+    </Alert>
 
     <div v-if="roastHistory.length > 0" class="space-y-2">
       <div class="flex items-center justify-between px-1">
         <p class="text-sm font-medium text-highlighted">
           吐槽历史
         </p>
-        <UButton
+        <Button
           color="neutral"
           variant="ghost"
           size="xs"
@@ -117,7 +117,7 @@ function updateStyle(value: unknown) {
           @click="emit('clearHistory')"
         >
           清空
-        </UButton>
+        </Button>
       </div>
       <div class="space-y-2">
         <div
