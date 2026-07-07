@@ -134,6 +134,7 @@ export function useLive2DCanvas() {
     canvasScale,
     minScale,
     maxScale,
+    isDragging,
     // interactions
     startDrag,
     dragTo,

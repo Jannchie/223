@@ -1,38 +1,135 @@
 <script setup lang="ts">
-defineProps<{ apiKey: string, baseUrl: string }>()
-const emit = defineEmits<{ (e: 'update:apiKey', v: string): void, (e: 'update:baseUrl', v: string): void }>()
+import { computed } from 'vue'
+import { useBackends } from '../../../composables/useBackends'
+
+const {
+  backends,
+  activeId,
+  activeBackend,
+  selectBackend,
+  addBackend,
+  updateActiveBackend,
+  removeBackend,
+} = useBackends()
+
+const active = computed(() => activeBackend.value)
+
+function handleAdd() {
+  addBackend({ name: `后端 ${backends.value.length + 1}` })
+}
+
+function handleRemove() {
+  if (activeId.value) {
+    removeBackend(activeId.value)
+  }
+}
+
+function update(field: 'name' | 'apiKey' | 'baseURL' | 'model', value: unknown) {
+  updateActiveBackend({ [field]: String(value ?? '') })
+}
 </script>
 
 <template>
-  <div class="tab-content">
-    <h3>OpenAI 设置</h3>
-    <div class="setting-item">
-      <label>API Key:</label>
-      <input
-        :value="apiKey"
-        type="password"
-        placeholder="输入你的 OpenAI API Key"
-        class="setting-input"
-        @input="emit('update:apiKey', ($event.target as HTMLInputElement).value)"
-      >
+  <div class="space-y-5">
+    <div>
+      <div class="mb-2 flex items-center justify-between px-1">
+        <p class="text-sm font-medium text-highlighted">
+          后端列表
+        </p>
+        <Button size="xs" variant="soft" icon="i-carbon-add" @click="handleAdd">
+          新建后端
+        </Button>
+      </div>
+
+      <div class="space-y-2">
+        <button
+          v-for="backend in backends"
+          :key="backend.id"
+          type="button"
+          class="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors"
+          :class="backend.id === activeId
+            ? 'border-primary bg-muted'
+            : 'border-default hover:border-accented'"
+          @click="selectBackend(backend.id)"
+        >
+          <Icon
+            :name="backend.id === activeId ? 'i-carbon-radio-button-checked' : 'i-carbon-radio-button'"
+            class="size-5 shrink-0"
+            :class="backend.id === activeId ? 'text-primary' : 'text-dimmed'"
+          />
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-medium text-highlighted">
+              {{ backend.name || '未命名后端' }}
+            </p>
+            <p class="truncate text-xs text-muted">
+              {{ backend.baseURL || '默认地址' }}
+            </p>
+          </div>
+          <Badge v-if="backend.id === activeId" color="primary" variant="soft" size="sm">
+            使用中
+          </Badge>
+        </button>
+      </div>
     </div>
-    <div class="setting-item">
-      <label>Base URL:</label>
-      <input
-        :value="baseUrl"
-        type="text"
-        placeholder="API 基础地址"
-        class="setting-input"
-        @input="emit('update:baseUrl', ($event.target as HTMLInputElement).value)"
-      >
+
+    <div v-if="active" class="space-y-4 rounded-xl border border-default p-4">
+      <div class="flex items-center justify-between">
+        <p class="text-sm font-medium text-highlighted">
+          编辑「{{ active.name || '未命名后端' }}」
+        </p>
+        <Button
+          size="xs"
+          color="error"
+          variant="ghost"
+          icon="i-carbon-trash-can"
+          :disabled="backends.length <= 1"
+          @click="handleRemove"
+        >
+          删除
+        </Button>
+      </div>
+
+      <FormField label="名称">
+        <Input
+          :model-value="active.name"
+          placeholder="给这个后端起个名字"
+          icon="i-carbon-tag"
+          class="w-full"
+          @update:model-value="(v: unknown) => update('name', v)"
+        />
+      </FormField>
+
+      <FormField label="API Key" description="密钥仅保存在本地" required>
+        <Input
+          :model-value="active.apiKey"
+          type="password"
+          placeholder="sk-..."
+          autocomplete="off"
+          icon="i-carbon-password"
+          class="w-full"
+          @update:model-value="(v: unknown) => update('apiKey', v)"
+        />
+      </FormField>
+
+      <FormField label="Base URL" description="兼容 OpenAI 协议的服务地址">
+        <Input
+          :model-value="active.baseURL"
+          placeholder="https://api.openai.com/v1"
+          icon="i-carbon-link"
+          class="w-full"
+          @update:model-value="(v: unknown) => update('baseURL', v)"
+        />
+      </FormField>
+
+      <FormField label="模型">
+        <Input
+          :model-value="active.model"
+          placeholder="gpt-4.1-mini"
+          icon="i-carbon-machine-learning-model"
+          class="w-full"
+          @update:model-value="(v: unknown) => update('model', v)"
+        />
+      </FormField>
     </div>
   </div>
 </template>
-
-<style scoped>
-.tab-content { padding: 4px 2px; }
-.setting-item { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
-label { width: 96px; color: #444; }
-.setting-input { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; }
-.setting-input:focus { outline: none; border-color: #007bff; box-shadow: 0 0 0 2px rgba(0,123,255,.2); }
-</style>

@@ -1,10 +1,13 @@
-/* eslint-disable node/prefer-global/process */
 import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
 // import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, protocol, screen, session, Tray } from 'electron'
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, protocol, safeStorage, screen, session, Tray } from 'electron'
+import electronUpdater from 'electron-updater'
+
+// electron-updater 是 CommonJS 模块，在 ESM 下通过 default import 解构
+const { autoUpdater } = electronUpdater
 
 // const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -38,18 +41,28 @@ export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
 
 let win: BrowserWindow | null
-let recordingWin: BrowserWindow | null = null // 录制窗口
+let settingsWin: BrowserWindow | null = null // 设置窗口
 let tray: Tray | null = null
 let mouseTrackingInterval: NodeJS.Timeout | null = null
 let lastMousePosition = { x: -1, y: -1 } // 记录上次鼠标位置
 let staticServer: http.Server | null = null
 let serverPort = 0 // 动态分配的端口号
 let alwaysOnTopInterval: NodeJS.Timeout | null = null
+let updateDownloaded = false // 新版本是否已下载完成，等待重启安装
 
 // 截图相关变量
 let screenshotRoastTimer: NodeJS.Timeout | null = null
 let screenshotRoastEnabled = false
 let screenshotRoastInterval = 5 * 60 * 1000 // 默认 5 分钟
+
+type ScreenshotCaptureReason = 'manual' | 'auto-roast' | 'hotkey-roast'
+
+interface ScreenshotSize {
+  width: number
+  height: number
+}
+
+const screenshotDebugDirectoryName = 'vision-debug-screenshots'
 
 // GPU 和性能优化配置
 app.commandLine.appendSwitch('--enable-gpu-rasterization')
@@ -76,9 +89,11 @@ async function createWindow() {
 
   // 获取主显示器的完整尺寸（包括任务栏区域）
   const primaryDisplay = screen.getPrimaryDisplay()
-  const { width, height } = primaryDisplay.bounds
+  const { x, y, width, height } = primaryDisplay.bounds
 
   win = new BrowserWindow({
+    x,
+    y,
     width,
     height,
     transparent: true,
@@ -117,7 +132,8 @@ async function createWindow() {
   }, 5000)
 
   // 初始设置：不穿透，让前端控制穿透逻辑
-  win.setIgnoreMouseEvents(false, { forward: false })
+  // Keep the transparent overlay click-through until the renderer opts into capture.
+  win.setIgnoreMouseEvents(true, { forward: true })
 
   // 监听渲染进程的消息来动态控制鼠标事件
   win.webContents.on('ipc-message', (_, channel, data) => {
@@ -164,25 +180,30 @@ async function createWindow() {
 
   // 创建系统托盘
   createTray()
+
+  // 启动自动更新检查
+  setupAutoUpdater()
 }
 
-// 创建录制窗口
-async function createRecordingWindow() {
-  if (recordingWin && !recordingWin.isDestroyed()) {
-    recordingWin.focus()
+// 创建设置窗口
+async function createSettingsWindow() {
+  if (settingsWin && !settingsWin.isDestroyed()) {
+    settingsWin.focus()
     return
   }
 
-  recordingWin = new BrowserWindow({
-    width: 800,
-    height: 600,
+  settingsWin = new BrowserWindow({
+    width: 720,
+    height: 760,
+    minWidth: 520,
+    minHeight: 520,
     transparent: false,
     frame: true,
     alwaysOnTop: false,
     skipTaskbar: false,
     resizable: true,
-    title: 'NiNiSan - 录制窗口',
-    backgroundColor: '#f0f0f0',
+    title: 'NiNiSan - 设置',
+    backgroundColor: '#f5f6f8',
     icon: path.join(process.env.VITE_PUBLIC, 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
@@ -191,23 +212,51 @@ async function createRecordingWindow() {
     },
   })
 
-  // 加载相同的页面，但传递录制模式参数
   if (VITE_DEV_SERVER_URL) {
-    recordingWin.loadURL(`${VITE_DEV_SERVER_URL}?recording=true`)
+    settingsWin.loadURL(`${VITE_DEV_SERVER_URL}?settings=true`)
   }
   else {
-    recordingWin.loadFile(path.join(RENDERER_DIST, 'index.html'))
-    // 在生产模式下通过postMessage传递参数
-    recordingWin.webContents.once('did-finish-load', () => {
-      recordingWin?.webContents.send('set-recording-mode', true)
+    settingsWin.loadFile(path.join(RENDERER_DIST, 'index.html'), {
+      query: { settings: 'true' },
     })
   }
 
-  recordingWin.on('closed', () => {
-    recordingWin = null
+  settingsWin.setMenu(null)
+
+  settingsWin.webContents.on('before-input-event', (_, input) => {
+    if (input.key === 'F12' || (input.control && input.shift && input.key === 'I')) {
+      settingsWin?.webContents.openDevTools({ mode: 'detach' })
+    }
   })
 
-  return recordingWin
+  settingsWin.webContents.on('context-menu', (_, params) => {
+    if (!settingsWin) {
+      return
+    }
+    const template = [
+      { role: 'cut', enabled: params.editFlags.canCut },
+      { role: 'copy', enabled: params.editFlags.canCopy },
+      { role: 'paste', enabled: params.editFlags.canPaste },
+    ] as Electron.MenuItemConstructorOptions[]
+
+    if (VITE_DEV_SERVER_URL) {
+      template.push({ type: 'separator' }, {
+        label: 'Inspect Element',
+        click: () => settingsWin?.webContents.inspectElement(params.x, params.y),
+      }, {
+        label: 'Toggle DevTools',
+        click: () => settingsWin?.webContents.openDevTools({ mode: 'detach' }),
+      })
+    }
+
+    Menu.buildFromTemplate(template).popup({ window: settingsWin })
+  })
+
+  settingsWin.on('closed', () => {
+    settingsWin = null
+  })
+
+  return settingsWin
 }
 
 // 创建系统托盘函数
@@ -280,16 +329,14 @@ function createTray() {
       type: 'separator',
     },
     {
-      label: recordingWin && !recordingWin.isDestroyed() ? '关闭录制窗口' : '打开录制窗口',
+      label: '检查更新',
       type: 'normal',
       click: () => {
-        if (recordingWin && !recordingWin.isDestroyed()) {
-          recordingWin.close()
-        }
-        else {
-          createRecordingWindow()
-        }
+        checkForUpdatesManually()
       },
+    },
+    {
+      type: 'separator',
     },
     {
       label: '退出',
@@ -316,6 +363,103 @@ function createTray() {
   })
 }
 
+// ---------- 自动更新（electron-updater）----------
+// 从 GitHub Releases 拉取新版本，静默下载，下载完成后提示用户重启安装
+function setupAutoUpdater() {
+  // 开发模式（有 dev server）不检查更新
+  if (VITE_DEV_SERVER_URL) {
+    return
+  }
+
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.logger = console
+
+  autoUpdater.on('error', (error) => {
+    console.error('自动更新出错:', error)
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    console.log('发现新版本:', info.version)
+  })
+
+  autoUpdater.on('update-not-available', () => {
+    console.log('当前已是最新版本')
+  })
+
+  autoUpdater.on('update-downloaded', async (info) => {
+    updateDownloaded = true
+    const result = await dialog.showMessageBox({
+      type: 'info',
+      buttons: ['立即重启', '稍后'],
+      defaultId: 0,
+      cancelId: 1,
+      title: '发现新版本',
+      message: `NiNiSan ${info.version} 已下载完成`,
+      detail: '重启应用即可完成更新。',
+    })
+    if (result.response === 0) {
+      autoUpdater.quitAndInstall()
+    }
+  })
+
+  // 启动后延迟检查，避免拖慢启动
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch((error) => {
+      console.error('检查更新失败:', error)
+    })
+  }, 3000)
+}
+
+// 手动检查更新（供托盘菜单调用）
+async function checkForUpdatesManually() {
+  if (VITE_DEV_SERVER_URL) {
+    await dialog.showMessageBox({
+      type: 'info',
+      message: '开发模式下不检查更新',
+    })
+    return
+  }
+
+  // 已下载完成，直接询问是否重启安装
+  if (updateDownloaded) {
+    const result = await dialog.showMessageBox({
+      type: 'info',
+      buttons: ['立即重启', '稍后'],
+      defaultId: 0,
+      cancelId: 1,
+      title: '更新已就绪',
+      message: '新版本已下载完成',
+      detail: '重启应用即可完成更新。',
+    })
+    if (result.response === 0) {
+      autoUpdater.quitAndInstall()
+    }
+    return
+  }
+
+  try {
+    const checkResult = await autoUpdater.checkForUpdates()
+    // 无更新时提示已是最新版本（有更新则会自动下载，由事件处理）
+    if (!checkResult || checkResult.updateInfo.version === app.getVersion()) {
+      await dialog.showMessageBox({
+        type: 'info',
+        title: '检查更新',
+        message: '当前已是最新版本',
+        detail: `版本 ${app.getVersion()}`,
+      })
+    }
+  }
+  catch (error) {
+    await dialog.showMessageBox({
+      type: 'error',
+      title: '检查更新',
+      message: '检查更新失败',
+      detail: String(error),
+    })
+  }
+}
+
 // 全局鼠标位置跟踪函数
 function startMouseTracking() {
   if (mouseTrackingInterval) {
@@ -329,7 +473,11 @@ function startMouseTracking() {
       // 只有鼠标位置真正变化时才发送事件
       if (mousePos.x !== lastMousePosition.x || mousePos.y !== lastMousePosition.y) {
         lastMousePosition = { x: mousePos.x, y: mousePos.y }
-        win.webContents.send('mouse-position', { x: mousePos.x, y: mousePos.y })
+        const windowBounds = win.getBounds()
+        win.webContents.send('mouse-position', {
+          x: mousePos.x - windowBounds.x,
+          y: mousePos.y - windowBounds.y,
+        })
       }
     }
   }, 33) // ~30fps, 降低频率减少不必要的检查
@@ -455,7 +603,6 @@ app.on('activate', () => {
 // Enable hardware acceleration for better performance
 // app.disableHardwareAcceleration() // Commented out for better Live2D performance
 
-// eslint-disable-next-line unicorn/prefer-top-level-await
 app.whenReady().then(() => {
   // 处理麦克风权限
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
@@ -499,11 +646,11 @@ app.whenReady().then(() => {
       // 检查文件是否存在
       return fs.existsSync(filePath)
         ? new Response(fs.readFileSync(filePath), {
-          headers: {
-            'Content-Type': getContentType(filePath),
-            'Access-Control-Allow-Origin': '*',
-          },
-        })
+            headers: {
+              'Content-Type': getContentType(filePath),
+              'Access-Control-Allow-Origin': '*',
+            },
+          })
         : new Response('File not found', { status: 404 })
     }
     catch (error) {
@@ -532,40 +679,111 @@ function getContentType(filePath: string): string {
   return mimeTypes[ext] || 'application/octet-stream'
 }
 
-// 截图功能
-async function captureScreenshot(): Promise<string | null> {
+function getScreenshotDebugDirectory(): string {
+  const configuredDirectory = process.env.NINISAN_VISION_DEBUG_DIR?.trim()
+  if (configuredDirectory) {
+    return path.resolve(configuredDirectory)
+  }
+
+  return path.join(app.getPath('userData'), screenshotDebugDirectoryName)
+}
+
+function padNumber(value: number, size = 2): string {
+  return String(value).padStart(size, '0')
+}
+
+function formatDebugTimestamp(date: Date): string {
+  return `${date.getFullYear()}${padNumber(date.getMonth() + 1)}${padNumber(date.getDate())}-${padNumber(date.getHours())}${padNumber(date.getMinutes())}${padNumber(date.getSeconds())}-${padNumber(date.getMilliseconds(), 3)}`
+}
+
+function sanitizeFilenamePart(value: string): string {
+  const sanitizedValue = value
+    .trim()
+    .replaceAll(/[<>:"/\\|?*\u0000-\u001F]+/g, '_')
+    .replaceAll(/\s+/g, '-')
+    .replaceAll(/_+/g, '_')
+    .slice(0, 80)
+
+  return sanitizedValue || 'source'
+}
+
+function getScreenshotThumbnailSize(): ScreenshotSize {
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const longEdgeLimit = 1920
+  const longEdge = Math.max(primaryDisplay.size.width, primaryDisplay.size.height)
+  const scale = longEdge > longEdgeLimit ? longEdgeLimit / longEdge : 1
+
+  return {
+    width: Math.round(primaryDisplay.size.width * scale),
+    height: Math.round(primaryDisplay.size.height * scale),
+  }
+}
+
+function saveVisionDebugScreenshot(
+  pngData: Buffer,
+  reason: ScreenshotCaptureReason,
+  sourceName: string,
+  imageSize: ScreenshotSize,
+): string | null {
   try {
-    // 获取所有可用的窗口源
+    const debugDirectory = getScreenshotDebugDirectory()
+    fs.mkdirSync(debugDirectory, { recursive: true })
+
+    const filename = [
+      formatDebugTimestamp(new Date()),
+      reason,
+      `${imageSize.width}x${imageSize.height}`,
+      sanitizeFilenamePart(sourceName),
+    ].join('-')
+    const filePath = path.join(debugDirectory, `${filename}.png`)
+
+    fs.writeFileSync(filePath, pngData)
+    console.log(`Saved vision debug screenshot: ${filePath}`)
+    return filePath
+  }
+  catch (error) {
+    console.error('Failed to save vision debug screenshot:', error)
+    return null
+  }
+}
+
+// Capture the exact image that will be sent to the vision model.
+async function captureScreenshot(reason: ScreenshotCaptureReason = 'manual'): Promise<string | null> {
+  try {
+    const thumbnailSize = getScreenshotThumbnailSize()
+    const primaryDisplay = screen.getPrimaryDisplay()
     const sources = await desktopCapturer.getSources({
-      types: ['window'],
-      thumbnailSize: { width: 1920, height: 1080 },
+      types: ['screen', 'window'],
+      thumbnailSize,
     })
 
     if (sources.length === 0) {
-      console.error('No window sources available')
+      console.error('No screenshot sources available')
       return null
     }
 
-    // 找到当前活动窗口（通常是最前面的窗口）
-    // 我们可以通过窗口名称或者选择第一个非 Electron 应用的窗口
-    let targetSource = sources[0]
-
-    // 尝试找到非当前应用的活动窗口
-    for (const source of sources) {
-      // 跳过空白窗口和我们自己的应用窗口
-      if (source.name
-          && !source.name.includes('NiNiSan')
-          && !source.name.includes('Electron')
-          && source.name.trim() !== '') {
-        targetSource = source
-        break
-      }
-    }
+    // Prefer the primary screen so protected or minimized window thumbnails do not look like black frames.
+    const screenSources = sources.filter(source => source.id.startsWith('screen:'))
+    const windowSources = sources.filter(source => !source.id.startsWith('screen:'))
+    const primaryScreenSource = screenSources.find(source => source.display_id === String(primaryDisplay.id))
+    const fallbackWindowSource = windowSources.find(source =>
+      source.name
+      && !source.name.includes('NiNiSan')
+      && !source.name.includes('Electron')
+      && source.name.trim() !== '',
+    )
+    const targetSource = primaryScreenSource ?? screenSources[0] ?? fallbackWindowSource ?? sources[0]
 
     const screenshot = targetSource.thumbnail
+    if (screenshot.isEmpty()) {
+      console.error(`Captured screenshot is empty: ${targetSource.name}`)
+      return null
+    }
 
-    // 转换为 base64 格式
-    const base64Data = screenshot.toPNG().toString('base64')
+    const pngData = screenshot.toPNG()
+    saveVisionDebugScreenshot(pngData, reason, targetSource.name, screenshot.getSize())
+
+    const base64Data = pngData.toString('base64')
     return `data:image/png;base64,${base64Data}`
   }
   catch (error) {
@@ -582,7 +800,7 @@ function startScreenshotRoast() {
 
   screenshotRoastTimer = setInterval(async () => {
     if (screenshotRoastEnabled && win && !win.isDestroyed()) {
-      const screenshot = await captureScreenshot()
+      const screenshot = await captureScreenshot('auto-roast')
       if (screenshot) {
         win.webContents.send('screenshot-captured', screenshot)
       }
@@ -598,11 +816,101 @@ function stopScreenshotRoast() {
   }
 }
 
+// ---------- 应用配置持久化（本地文件 + 密钥加密）----------
+// 存储于 userData/config.json：非敏感字段明文，API Key 使用 safeStorage 加密
+
+interface StoredBackend {
+  id: string
+  name: string
+  baseURL: string
+  model: string
+  apiKeyEnc: string
+}
+
+interface BackendsState {
+  backends: Array<{ id: string, name: string, baseURL: string, model: string, apiKey: string }>
+  activeId: string
+}
+
+function getConfigPath(): string {
+  return path.join(app.getPath('userData'), 'config.json')
+}
+
+function encryptSecret(value: string): string {
+  if (!value) {
+    return ''
+  }
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      return `enc:${safeStorage.encryptString(value).toString('base64')}`
+    }
+  }
+  catch (error) {
+    console.error('加密 API Key 失败，退回明文存储:', error)
+  }
+  // 加密不可用（如部分 Linux 无密钥环）时退回明文
+  return `raw:${value}`
+}
+
+function decryptSecret(stored: string): string {
+  if (!stored) {
+    return ''
+  }
+  if (stored.startsWith('enc:')) {
+    try {
+      return safeStorage.decryptString(Buffer.from(stored.slice(4), 'base64'))
+    }
+    catch (error) {
+      console.error('解密 API Key 失败:', error)
+      return ''
+    }
+  }
+  if (stored.startsWith('raw:')) {
+    return stored.slice(4)
+  }
+  return stored
+}
+
+function loadBackendsConfig(): BackendsState {
+  try {
+    const raw = fs.readFileSync(getConfigPath(), 'utf-8')
+    const data = JSON.parse(raw) as { backends?: StoredBackend[], activeId?: string }
+    const backends = (data.backends ?? []).map(b => ({
+      id: b.id,
+      name: b.name,
+      baseURL: b.baseURL,
+      model: b.model,
+      apiKey: decryptSecret(b.apiKeyEnc ?? ''),
+    }))
+    return { backends, activeId: data.activeId ?? '' }
+  }
+  catch {
+    // 文件不存在或损坏时返回空状态，由渲染进程负责迁移/初始化
+    return { backends: [], activeId: '' }
+  }
+}
+
+function saveBackendsConfig(state: BackendsState): void {
+  const data = {
+    backends: (state.backends ?? []).map(b => ({
+      id: b.id,
+      name: b.name,
+      baseURL: b.baseURL,
+      model: b.model,
+      apiKeyEnc: encryptSecret(b.apiKey ?? ''),
+    })),
+    activeId: state.activeId ?? '',
+  }
+  const configPath = getConfigPath()
+  fs.mkdirSync(path.dirname(configPath), { recursive: true })
+  fs.writeFileSync(configPath, JSON.stringify(data, null, 2), 'utf-8')
+}
+
 // 设置 IPC 处理器
 function setupIpcHandlers() {
   // 手动截图
   ipcMain.handle('take-screenshot', async () => {
-    return await captureScreenshot()
+    return await captureScreenshot('manual')
   })
 
   // 启用/禁用截图吐槽
@@ -634,24 +942,51 @@ function setupIpcHandlers() {
     }
   })
 
-  // 打开录制窗口
-  ipcMain.handle('open-recording-window', async () => {
-    await createRecordingWindow()
-    return !!recordingWin
+  // 打开设置窗口
+  ipcMain.handle('open-settings-window', async () => {
+    await createSettingsWindow()
+    return !!settingsWin
   })
 
-  // 关闭录制窗口
-  ipcMain.handle('close-recording-window', () => {
-    if (recordingWin && !recordingWin.isDestroyed()) {
-      recordingWin.close()
+  // 关闭设置窗口
+  ipcMain.handle('close-settings-window', () => {
+    if (settingsWin && !settingsWin.isDestroyed()) {
+      settingsWin.close()
       return true
     }
     return false
   })
 
-  // 获取录制窗口状态
-  ipcMain.handle('get-recording-window-status', () => {
-    return recordingWin && !recordingWin.isDestroyed()
+  // 获取设置窗口状态
+  ipcMain.handle('get-settings-window-status', () => {
+    return settingsWin && !settingsWin.isDestroyed()
+  })
+
+  // 角色变更广播：转发给除发送方以外的所有窗口，实现跨窗口即时同步
+  ipcMain.on('character-changed', (event, payload) => {
+    for (const targetWindow of BrowserWindow.getAllWindows()) {
+      if (targetWindow.isDestroyed() || targetWindow.webContents.id === event.sender.id) {
+        continue
+      }
+      targetWindow.webContents.send('character-changed', payload)
+    }
+  })
+
+  // 读取后端配置（API Key 已解密）
+  ipcMain.handle('backends:load', () => {
+    return loadBackendsConfig()
+  })
+
+  // 保存后端配置（API Key 加密落盘）并广播给其他窗口
+  ipcMain.handle('backends:save', (event, state: BackendsState) => {
+    saveBackendsConfig(state)
+    for (const targetWindow of BrowserWindow.getAllWindows()) {
+      if (targetWindow.isDestroyed() || targetWindow.webContents.id === event.sender.id) {
+        continue
+      }
+      targetWindow.webContents.send('backends-changed', state)
+    }
+    return true
   })
 }
 
@@ -662,7 +997,7 @@ function registerGlobalShortcuts() {
     const ret1 = globalShortcut.register('F7', async () => {
       if (win && !win.isDestroyed()) {
         // 触发截图吐槽
-        const screenshot = await captureScreenshot()
+        const screenshot = await captureScreenshot('hotkey-roast')
         if (screenshot) {
           win.webContents.send('hotkey-screenshot-roast', screenshot)
         }

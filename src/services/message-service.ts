@@ -7,9 +7,9 @@
 import type { ChatSession, ExtendedMessage, MessageService } from '../types/chat'
 import { useLocalStorage } from '@vueuse/core'
 import { repositories } from '../composables/useDatabase'
-import { characterService } from './character-service'
 import { initializeDatabase } from '../db'
 import { migrateFromLocalStorage, needsMigration } from '../db/migration'
+import { characterService } from './character-service'
 
 const MAX_SESSIONS = 50 // 最大会话数量
 const MAX_MESSAGES_PER_SESSION = 200 // 每个会话最大消息数

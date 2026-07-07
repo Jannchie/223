@@ -4,12 +4,7 @@
   "appId": "com.ninisan.desktop-pet",
   "asar": true,
   "productName": "NiNiSan",
-  "copyright": "Copyright © 2025",
-  "description": "NiNiSan - 桌面助手应用",
-  "author": {
-    "name": "NiNiSan Team"
-  },
-  "homepage": "https://github.com/ninisan/desktop-pet",
+  "copyright": "Copyright (c) 2025",
   "directories": {
     "output": "release/${version}"
   },
@@ -35,8 +30,7 @@
       }
     ],
     "artifactName": "${productName}-Windows-${version}-Setup.${ext}",
-    "icon": "build/icon.ico",
-    "publisherDisplayName": "NiNiSan Team"
+    "icon": "build/icon.ico"
   },
   "nsis": {
     "oneClick": false,
@@ -54,7 +48,10 @@
   },
   "publish": {
     "provider": "github",
-    "owner": "ninisan",
-    "repo": "desktop-pet"
+    "owner": "Jannchie",
+    "repo": "223",
+    // release: 推送 v* tag 后 CI 直接发布正式 Release，立即对所有用户可见，
+    //   自动更新随即生效。若想改回「先生成草稿、人工检查后再 Publish」，改为 "draft"。
+    "releaseType": "release"
   }
 }

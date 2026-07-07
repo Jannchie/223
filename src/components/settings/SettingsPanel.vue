@@ -1,18 +1,17 @@
 <script setup lang="ts">
+import type { GazeAtUserConfig, GazeAtUserConfigUpdate } from '../../composables/useGaze'
 import type { RoastStyle } from '../../utils/screenshot-prompts'
 import type { RoastResult, ScreenshotRoastConfig } from '../../utils/screenshot-roast'
-import CharacterSettings from './tabs/CharacterSettings.vue'
-import GazeSettings from './tabs/GazeSettings.vue'
-import OpenAISettings from './tabs/OpenAISettings.vue'
-import RecordingSettings from './tabs/RecordingSettings.vue'
-import RoastSettings from './tabs/RoastSettings.vue'
+import { computed } from 'vue'
+import SettingsBody from './SettingsBody.vue'
 
-defineProps<{
+const props = defineProps<{
   visible: boolean
-  activeTab: 'openai' | 'character' | 'roast' | 'recording' | 'gaze'
+  embedded?: boolean
+  activeTab: 'openai' | 'character' | 'roast' | 'gaze'
   // OpenAI
   apiKey: string
-  baseUrl: string
+  baseURL: string
   // Character
   currentCharacterId: string | null
   characterRefreshKey?: number
@@ -21,20 +20,17 @@ defineProps<{
   isRoasting: boolean
   currentRoast: RoastResult | null
   roastHistory: RoastResult[]
-  // Recording
-  isRecordingWindowOpen: boolean
   // Gaze
-  gazeAtUserConfig: any
-  model: any | null
+  gazeAtUserConfig: GazeAtUserConfig
 }>()
 
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'cancel'): void
   (e: 'save'): void
-  (e: 'update:activeTab', tab: 'openai' | 'character' | 'roast' | 'recording' | 'gaze'): void
+  (e: 'update:activeTab', tab: 'openai' | 'character' | 'roast' | 'gaze'): void
   (e: 'update:apiKey', v: string): void
-  (e: 'update:baseUrl', v: string): void
+  (e: 'update:baseURL', v: string): void
   // Character
   (e: 'characterSelect', payload: any): void
   (e: 'characterEdit', payload: any): void
@@ -46,201 +42,158 @@ const emit = defineEmits<{
   (e: 'roastSetStyle', style: RoastStyle): void
   (e: 'roastTrigger'): void
   (e: 'roastClearHistory'): void
-  // Recording
-  (e: 'recordingToggle'): void
   // Gaze
-  (e: 'gazeUpdateConfig', cfg: any): void
+  (e: 'gazeUpdateConfig', cfg: GazeAtUserConfigUpdate): void
   (e: 'gazeTestLock'): void
 }>()
 
-function switchTab(tab: 'openai' | 'character' | 'roast' | 'recording' | 'gaze') {
-  emit('update:activeTab', tab)
+const tabItems = [
+  { label: '角色管理', value: 'character', icon: 'i-carbon-user-avatar' },
+  { label: 'OpenAI 设置', value: 'openai', icon: 'i-carbon-api' },
+  { label: '截图吐槽', value: 'roast', icon: 'i-carbon-chat' },
+  { label: '目光跟踪', value: 'gaze', icon: 'i-carbon-view' },
+]
+
+const activeTabModel = computed({
+  get: () => props.activeTab,
+  set: value => emit('update:activeTab', value as typeof props.activeTab),
+})
+
+const cancelLabel = computed(() => (props.embedded ? '关闭' : '取消'))
+
+// 转发给 SettingsBody 的数据与事件（避免模态/独立窗口两处重复）
+const bodyProps = computed(() => ({
+  activeTab: props.activeTab,
+  currentCharacterId: props.currentCharacterId,
+  characterRefreshKey: props.characterRefreshKey,
+  roastConfig: props.roastConfig,
+  isRoasting: props.isRoasting,
+  currentRoast: props.currentRoast,
+  roastHistory: props.roastHistory,
+  gazeAtUserConfig: props.gazeAtUserConfig,
+}))
+
+const bodyHandlers = {
+  characterSelect: (e: any) => emit('characterSelect', e),
+  characterEdit: (e: any) => emit('characterEdit', e),
+  characterDelete: (e: any) => emit('characterDelete', e),
+  characterCreate: () => emit('characterCreate'),
+  roastToggleAuto: () => emit('roastToggleAuto'),
+  roastSetInterval: (m: number) => emit('roastSetInterval', m),
+  roastSetStyle: (s: RoastStyle) => emit('roastSetStyle', s),
+  roastTrigger: () => emit('roastTrigger'),
+  roastClearHistory: () => emit('roastClearHistory'),
+  gazeUpdateConfig: (cfg: GazeAtUserConfigUpdate) => emit('gazeUpdateConfig', cfg),
+  gazeTestLock: () => emit('gazeTestLock'),
 }
 
-function onOverlayClick() {
-  emit('cancel')
+const tabsUi = {
+  list: 'w-full gap-1 rounded-xl p-1',
+  trigger: 'grow rounded-lg font-medium data-[state=active]:text-inverted',
+  indicator: 'rounded-lg',
+}
+
+function handleModalOpenChange(open: boolean) {
+  if (!open) {
+    emit('cancel')
+  }
 }
 </script>
 
 <template>
-  <teleport to="body">
-    <div v-if="visible" class="settings-overlay" @click="onOverlayClick">
-      <div class="settings-panel" @click.stop @keydown.stop @keyup.stop @keypress.stop>
-        <!-- tabs -->
-        <div class="settings-tabs">
-          <button class="tab-button" :class="{ active: activeTab === 'character' }" @click="switchTab('character')">
-            角色管理
-          </button>
-          <button class="tab-button" :class="{ active: activeTab === 'openai' }" @click="switchTab('openai')">
-            OpenAI 设置
-          </button>
-          <button class="tab-button" :class="{ active: activeTab === 'roast' }" @click="switchTab('roast')">
-            截图吐槽
-          </button>
-          <button class="tab-button" :class="{ active: activeTab === 'recording' }" @click="switchTab('recording')">
-            录制窗口
-          </button>
-          <button class="tab-button" :class="{ active: activeTab === 'gaze' }" @click="switchTab('gaze')">
-            目光跟踪
-          </button>
-        </div>
+  <!-- 弹窗形态 -->
+  <Modal
+    v-if="!embedded"
+    :open="visible"
+    :close="false"
+    :ui="{ content: 'max-w-xl' }"
+    @update:open="handleModalOpenChange"
+  >
+    <template #content>
+      <div class="flex max-h-[85vh] flex-col bg-default">
+        <header class="flex items-center gap-3 px-5 pb-4 pt-5">
+          <span class="flex size-9 items-center justify-center rounded-xl bg-primary text-inverted">
+            <Icon name="i-carbon-settings" class="size-5" />
+          </span>
+          <h1 class="text-base font-semibold text-highlighted">
+            设置
+          </h1>
+        </header>
 
-        <div class="tab-body">
-          <CharacterSettings
-            v-if="activeTab === 'character'"
-            :current-character-id="currentCharacterId"
-            :refresh-key="characterRefreshKey ?? 0"
-            @select="e => emit('characterSelect', e)"
-            @edit="e => emit('characterEdit', e)"
-            @delete="e => emit('characterDelete', e)"
-            @create="() => emit('characterCreate')"
-          />
-
-          <OpenAISettings
-            v-else-if="activeTab === 'openai'"
-            :api-key="apiKey"
-            :base-url="baseUrl"
-            @update:api-key="v => emit('update:apiKey', v)"
-            @update:base-url="v => emit('update:baseUrl', v)"
-          />
-
-          <RoastSettings
-            v-else-if="activeTab === 'roast'"
-            :roast-config="roastConfig"
-            :is-roasting="isRoasting"
-            :current-roast="currentRoast"
-            :roast-history="roastHistory"
-            @toggle-auto="() => emit('roastToggleAuto')"
-            @set-interval="m => emit('roastSetInterval', m)"
-            @set-style="s => emit('roastSetStyle', s)"
-            @trigger="() => emit('roastTrigger')"
-            @clear-history="() => emit('roastClearHistory')"
-          />
-
-          <RecordingSettings
-            v-else-if="activeTab === 'recording'"
-            :is-recording-window-open="isRecordingWindowOpen"
-            @toggle-recording-window="() => emit('recordingToggle')"
-          />
-
-          <GazeSettings
-            v-else
-            :gaze-config="gazeAtUserConfig"
-            :model="model"
-            @update-config="cfg => emit('gazeUpdateConfig', cfg)"
-            @test-lock="() => emit('gazeTestLock')"
+        <div class="px-5 pb-1">
+          <Tabs
+            v-model="activeTabModel"
+            :items="tabItems"
+            :content="false"
+            color="primary"
+            variant="pill"
+            size="sm"
+            :ui="tabsUi"
           />
         </div>
 
-        <div class="setting-actions">
-          <button class="save-btn" @click="$emit('save')">
-            保存
-          </button>
-          <button class="cancel-btn" @click="$emit('cancel')">
+        <main class="flex-1 overflow-auto px-5 py-4">
+          <SettingsBody v-bind="bodyProps" v-on="bodyHandlers" />
+        </main>
+
+        <footer class="flex items-center justify-end gap-2 border-t border-default px-5 py-4">
+          <Button color="neutral" variant="ghost" size="lg" @click="$emit('cancel')">
             取消
-          </button>
-        </div>
+          </Button>
+          <Button color="primary" size="lg" icon="i-carbon-checkmark" @click="$emit('save')">
+            保存
+          </Button>
+        </footer>
       </div>
+    </template>
+  </Modal>
+
+  <!-- 独立设置窗口形态 -->
+  <div
+    v-else-if="visible"
+    class="flex h-screen w-screen flex-col bg-default"
+    @keydown.stop
+    @keyup.stop
+    @keypress.stop
+  >
+    <header class="flex items-center gap-3 px-6 pb-4 pt-5">
+      <span class="flex size-10 items-center justify-center rounded-xl bg-primary text-inverted">
+        <Icon name="i-carbon-settings" class="size-5" />
+      </span>
+      <div class="min-w-0">
+        <h1 class="text-base font-semibold leading-tight text-highlighted">
+          NiNiSan 设置
+        </h1>
+        <p class="text-xs leading-tight text-muted">
+          个性化你的桌面伙伴
+        </p>
+      </div>
+    </header>
+
+    <div class="px-6 pb-1">
+      <Tabs
+        v-model="activeTabModel"
+        :items="tabItems"
+        :content="false"
+        color="primary"
+        variant="pill"
+        :ui="tabsUi"
+      />
     </div>
-  </teleport>
+
+    <main class="flex-1 overflow-auto px-6 py-5">
+      <div class="mx-auto w-full max-w-2xl">
+        <SettingsBody v-bind="bodyProps" v-on="bodyHandlers" />
+      </div>
+    </main>
+
+    <footer class="flex items-center justify-end gap-2 border-t border-default px-6 py-4">
+      <Button color="neutral" variant="ghost" size="lg" @click="$emit('cancel')">
+        {{ cancelLabel }}
+      </Button>
+      <Button color="primary" size="lg" icon="i-carbon-checkmark" @click="$emit('save')">
+        保存
+      </Button>
+    </footer>
+  </div>
 </template>
-
-<style scoped>
-/* Settings overlay/panel and common controls (moved from viewer) */
-.settings-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 10000;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  -webkit-app-region: no-drag;
-  pointer-events: auto;
-}
-
-.settings-panel {
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 12px;
-  padding: 0;
-  min-width: 400px;
-  max-width: 500px;
-  min-height: 500px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-  pointer-events: auto;
-  max-height: 85vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.settings-tabs {
-  display: flex;
-  border-bottom: 1px solid #e0e0e0;
-  background: #f8f9fa;
-  border-radius: 12px 12px 0 0;
-}
-
-.tab-button {
-  flex: 1;
-  padding: 16px 20px;
-  border: none;
-  background: transparent;
-  color: #666;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border-radius: 12px 12px 0 0;
-}
-
-.tab-button.active {
-  color: #222;
-  background: white;
-  border-bottom: 2px solid #007bff;
-}
-
-.tab-body {
-  padding: 16px 20px 0 20px;
-  flex: 1;
-  overflow: auto;
-}
-
-.setting-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 16px 20px;
-  border-top: 1px solid #eee;
-  background: #fff;
-}
-
-.save-btn, .cancel-btn {
-  padding: 8px 16px;
-  border-radius: 8px;
-  border: 1px solid #ddd;
-  background: #f8f9fa;
-  cursor: pointer;
-}
-
-.save-btn {
-  border-color: #28a745;
-  background: linear-gradient(135deg, #28a745, #20c997);
-  color: white;
-}
-
-.save-btn:hover {
-  filter: brightness(1.05);
-}
-
-.cancel-btn:hover {
-  background: #f1f3f5;
-}
-
-@media (max-width: 600px) {
-  .settings-panel { margin: 20px; min-width: auto; width: calc(100% - 40px); }
-}
-</style>

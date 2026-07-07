@@ -69,15 +69,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('hotkey-voice-recognition')
   },
 
-  // 录制窗口相关 API
-  openRecordingWindow: () => ipcRenderer.invoke('open-recording-window'),
+  // 设置窗口相关 API
+  openSettingsWindow: () => ipcRenderer.invoke('open-settings-window'),
 
-  closeRecordingWindow: () => ipcRenderer.invoke('close-recording-window'),
+  closeSettingsWindow: () => ipcRenderer.invoke('close-settings-window'),
 
-  getRecordingWindowStatus: () => ipcRenderer.invoke('get-recording-window-status'),
+  getSettingsWindowStatus: () => ipcRenderer.invoke('get-settings-window-status'),
 
-  onSetRecordingMode: (callback: (isRecording: boolean) => void) => {
-    ipcRenderer.on('set-recording-mode', (_, isRecording) => callback(isRecording))
+  // 角色变更跨窗口同步
+  notifyCharacterChanged: (payload: { id: string }) => ipcRenderer.send('character-changed', payload),
+
+  onCharacterChanged: (callback: (payload: { id: string }) => void) => {
+    ipcRenderer.on('character-changed', (_, payload) => callback(payload))
+  },
+
+  removeCharacterChangedListener: () => {
+    ipcRenderer.removeAllListeners('character-changed')
+  },
+
+  // 后端配置持久化（主进程本地文件 + 密钥加密）
+  loadBackends: () => ipcRenderer.invoke('backends:load'),
+
+  saveBackends: (state: unknown) => ipcRenderer.invoke('backends:save', state),
+
+  onBackendsChanged: (callback: (state: unknown) => void) => {
+    ipcRenderer.on('backends-changed', (_, state) => callback(state))
+  },
+
+  removeBackendsChangedListener: () => {
+    ipcRenderer.removeAllListeners('backends-changed')
   },
 })
 

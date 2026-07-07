@@ -1,11 +1,150 @@
+@import "tailwindcss";
 
+/* =============================================================
+ * NiNiSan 设计令牌（替代 @nuxt/ui）
+ * 风格：柔和圆润、无阴影。层次由背景分层 + 细描边表达。
+ * 主色：teal；中性色：zinc。支持明暗双主题（跟随系统 / .dark）。
+ * ============================================================= */
+
+:root {
+  /* 主色 */
+  --ui-primary: #0d9488;        /* teal-600 */
+  --ui-primary-hover: #0f766e;  /* teal-700 */
+  --ui-primary-soft: color-mix(in oklab, var(--ui-primary) 12%, transparent);
+
+  /* 语义状态色 */
+  --ui-error: #dc2626;          /* red-600 */
+  --ui-warning: #d97706;        /* amber-600 */
+  --ui-success: #16a34a;        /* green-600 */
+  --ui-color-warning-500: #f59e0b; /* amber-500，供 scoped 样式引用 */
+
+  /* 背景分层（无阴影，靠层级区分） */
+  --ui-bg: #ffffff;             /* 基础面 */
+  --ui-bg-elevated: #fafafa;    /* 抬升面（卡片 / 容器） */
+  --ui-bg-muted: #f4f4f5;       /* 凹陷面（输入 / 次级块） */
+  --ui-bg-inverted: #18181b;    /* 反色面 */
+
+  /* 文本 */
+  --ui-text-highlighted: #18181b; /* 标题 */
+  --ui-text: #3f3f46;             /* 正文 */
+  --ui-text-muted: #71717a;       /* 次级 */
+  --ui-text-dimmed: #a1a1aa;      /* 占位 / 弱化 */
+  --ui-text-inverted: #ffffff;    /* 反色面上的文本 */
+
+  /* 描边 */
+  --ui-border: #e4e4e7;          /* zinc-200 */
+  --ui-border-accented: #d4d4d8; /* zinc-300 */
+
+  /* 圆角（柔和圆润） */
+  --ui-radius-sm: 8px;
+  --ui-radius: 10px;
+  --ui-radius-lg: 14px;
+  --ui-radius-xl: 18px;
+  --ui-radius-2xl: 22px;
+
+  color-scheme: light;
+}
+
+:root.dark,
+.dark {
+  --ui-primary: #2dd4bf;        /* teal-400，暗色下更亮以保证对比 */
+  --ui-primary-hover: #5eead4;  /* teal-300 */
+  --ui-primary-soft: color-mix(in oklab, var(--ui-primary) 16%, transparent);
+
+  --ui-error: #f87171;          /* red-400 */
+  --ui-warning: #fbbf24;        /* amber-400 */
+  --ui-success: #4ade80;        /* green-400 */
+  --ui-color-warning-500: #fbbf24;
+
+  --ui-bg: #18181b;             /* zinc-900 */
+  --ui-bg-elevated: #27272a;    /* zinc-800 */
+  --ui-bg-muted: #3f3f46;       /* zinc-700 */
+  --ui-bg-inverted: #fafafa;
+
+  --ui-text-highlighted: #fafafa;
+  --ui-text: #d4d4d8;
+  --ui-text-muted: #a1a1aa;
+  --ui-text-dimmed: #71717a;
+  --ui-text-inverted: #18181b;
+
+  --ui-border: #3f3f46;         /* zinc-700 */
+  --ui-border-accented: #52525b;/* zinc-600 */
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --ui-primary: #2dd4bf;
+    --ui-primary-hover: #5eead4;
+    --ui-primary-soft: color-mix(in oklab, var(--ui-primary) 16%, transparent);
+
+    --ui-error: #f87171;
+    --ui-warning: #fbbf24;
+    --ui-success: #4ade80;
+    --ui-color-warning-500: #fbbf24;
+
+    --ui-bg: #18181b;
+    --ui-bg-elevated: #27272a;
+    --ui-bg-muted: #3f3f46;
+    --ui-bg-inverted: #fafafa;
+
+    --ui-text-highlighted: #fafafa;
+    --ui-text: #d4d4d8;
+    --ui-text-muted: #a1a1aa;
+    --ui-text-dimmed: #71717a;
+    --ui-text-inverted: #18181b;
+
+    --ui-border: #3f3f46;
+    --ui-border-accented: #52525b;
+
+    color-scheme: dark;
+  }
+}
+
+/* -------------------------------------------------------------
+ * 语义色工具类（替代 @nuxt/ui 提供的同名类）
+ * 用 @utility 注册，使 hover: / data-[state]: 等变体也可用。
+ * ------------------------------------------------------------- */
+@utility bg-default { background-color: var(--ui-bg); }
+@utility bg-elevated { background-color: var(--ui-bg-elevated); }
+@utility bg-muted { background-color: var(--ui-bg-muted); }
+@utility bg-primary { background-color: var(--ui-primary); }
+@utility bg-inverted { background-color: var(--ui-bg-inverted); }
+
+@utility text-default { color: var(--ui-text); }
+@utility text-highlighted { color: var(--ui-text-highlighted); }
+@utility text-muted { color: var(--ui-text-muted); }
+@utility text-dimmed { color: var(--ui-text-dimmed); }
+@utility text-inverted { color: var(--ui-text-inverted); }
+@utility text-primary { color: var(--ui-primary); }
+
+@utility border-default { border-color: var(--ui-border); }
+@utility border-primary { border-color: var(--ui-primary); }
+@utility border-accented { border-color: var(--ui-border-accented); }
+
+@utility divide-default {
+  & > :not([hidden]) ~ :not([hidden]) {
+    border-color: var(--ui-border);
+  }
+}
+
+/* -------------------------------------------------------------
+ * 基础样式
+ * ------------------------------------------------------------- */
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  color: var(--ui-text);
+}
+
+html.overlay-window,
+body.overlay-window {
   background: transparent;
 }
 
-html {
-  background: transparent;
+body.overlay-window {
+  display: flex;
+  place-items: center;
 }

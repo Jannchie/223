@@ -12,8 +12,8 @@ import type {
   StreamingCallbacks,
   UseChatReturn,
 } from '../types/chat'
-import { useLocalStorage } from '@vueuse/core'
 import { onMounted, ref, watch } from 'vue'
+import { useBackends } from './useBackends'
 import { characterService } from '../services/character-service'
 import { chatService } from '../services/chat-service'
 import { memoryService } from '../services/memory-service'
@@ -41,15 +41,20 @@ export function useChat(): UseChatReturn {
 
   const character = ref<Character | null>(null)
 
-  // 使用 localStorage 持久化配置
-  const storedApiKey = useLocalStorage('openai-api-key', '')
-  const storedBaseURL = useLocalStorage('openai-base-url', 'https://api.openai.com/v1')
+  // 当前使用的后端（apiKey / baseURL / model 从这里派生）
+  const { activeBackend } = useBackends()
 
-  // 监听存储变化并更新配置
-  watch([storedApiKey, storedBaseURL], ([apiKey, baseURL]) => {
-    config.value.apiKey = apiKey
-    config.value.baseURL = baseURL
-  }, { immediate: true })
+  // 监听当前后端变化并同步到聊天配置
+  watch(activeBackend, (backend) => {
+    if (!backend) {
+      return
+    }
+    config.value.apiKey = backend.apiKey || ''
+    config.value.baseURL = backend.baseURL || 'https://api.openai.com/v1'
+    if (backend.model) {
+      config.value.model = backend.model
+    }
+  }, { immediate: true, deep: true })
 
   /**
    * 加载当前人设
@@ -251,14 +256,6 @@ export function useChat(): UseChatReturn {
    */
   const updateConfig = (newConfig: Partial<ChatConfig>) => {
     config.value = { ...config.value, ...newConfig }
-
-    // 同步到 localStorage
-    if (newConfig.apiKey !== undefined) {
-      storedApiKey.value = newConfig.apiKey
-    }
-    if (newConfig.baseURL !== undefined) {
-      storedBaseURL.value = newConfig.baseURL
-    }
 
     // 验证新配置
     error.value = chatService.validateConfig(config.value) ? null : '配置无效'

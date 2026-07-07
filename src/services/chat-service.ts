@@ -115,7 +115,7 @@ class ChatServiceImpl implements ChatService {
         system: systemPrompt,
         messages,
         temperature: context.config.temperature || 0.7,
-        maxTokens: context.config.maxTokens || 2000,
+        maxOutputTokens: context.config.maxTokens || 2000,
       }
 
       // 执行流式请求

@@ -37,9 +37,5 @@ interface Window {
     onScreenshotCaptured: (callback: (screenshot: string) => void) => void
     onHotkeyScreenshotRoast: (callback: (screenshot: string) => void) => void
     removeScreenshotListeners: () => void
-    openRecordingWindow: () => Promise<boolean>
-    closeRecordingWindow: () => Promise<boolean>
-    getRecordingWindowStatus: () => Promise<boolean>
-    onSetRecordingMode: (callback: (isRecording: boolean) => void) => void
   }
 }
