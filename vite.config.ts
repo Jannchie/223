@@ -10,8 +10,13 @@ export default defineConfig({
     ui({
       ui: {
         colors: {
-          primary: 'cyan',
+          primary: 'teal',
           neutral: 'zinc',
+        },
+        button: {
+          slots: {
+            base: 'rounded-lg font-medium',
+          },
         },
       },
     }),

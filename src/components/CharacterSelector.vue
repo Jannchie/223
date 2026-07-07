@@ -149,7 +149,7 @@ defineExpose({
   <div class="flex flex-col gap-4">
     <div
       v-if="currentCharacter"
-      class="flex items-center gap-3 rounded-xl border border-default bg-elevated/50 p-3"
+      class="flex items-center gap-3 rounded-xl border border-default bg-elevated p-3"
     >
       <UAvatar
         :src="currentCharacter.avatar || undefined"

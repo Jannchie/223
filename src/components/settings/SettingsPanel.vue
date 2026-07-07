@@ -3,10 +3,7 @@ import type { GazeAtUserConfig, GazeAtUserConfigUpdate } from '../../composables
 import type { RoastStyle } from '../../utils/screenshot-prompts'
 import type { RoastResult, ScreenshotRoastConfig } from '../../utils/screenshot-roast'
 import { computed } from 'vue'
-import CharacterSettings from './tabs/CharacterSettings.vue'
-import GazeSettings from './tabs/GazeSettings.vue'
-import OpenAISettings from './tabs/OpenAISettings.vue'
-import RoastSettings from './tabs/RoastSettings.vue'
+import SettingsBody from './SettingsBody.vue'
 
 const props = defineProps<{
   visible: boolean
@@ -57,14 +54,44 @@ const tabItems = [
   { label: '目光跟踪', value: 'gaze', icon: 'i-carbon-view' },
 ]
 
-const activeTabMeta = computed(() => tabItems.find(t => t.value === props.activeTab) ?? tabItems[0])
-
 const activeTabModel = computed({
   get: () => props.activeTab,
   set: value => emit('update:activeTab', value as typeof props.activeTab),
 })
 
 const cancelLabel = computed(() => (props.embedded ? '关闭' : '取消'))
+
+// 转发给 SettingsBody 的数据与事件（避免模态/独立窗口两处重复）
+const bodyProps = computed(() => ({
+  activeTab: props.activeTab,
+  currentCharacterId: props.currentCharacterId,
+  characterRefreshKey: props.characterRefreshKey,
+  roastConfig: props.roastConfig,
+  isRoasting: props.isRoasting,
+  currentRoast: props.currentRoast,
+  roastHistory: props.roastHistory,
+  gazeAtUserConfig: props.gazeAtUserConfig,
+}))
+
+const bodyHandlers = {
+  characterSelect: (e: any) => emit('characterSelect', e),
+  characterEdit: (e: any) => emit('characterEdit', e),
+  characterDelete: (e: any) => emit('characterDelete', e),
+  characterCreate: () => emit('characterCreate'),
+  roastToggleAuto: () => emit('roastToggleAuto'),
+  roastSetInterval: (m: number) => emit('roastSetInterval', m),
+  roastSetStyle: (s: RoastStyle) => emit('roastSetStyle', s),
+  roastTrigger: () => emit('roastTrigger'),
+  roastClearHistory: () => emit('roastClearHistory'),
+  gazeUpdateConfig: (cfg: GazeAtUserConfigUpdate) => emit('gazeUpdateConfig', cfg),
+  gazeTestLock: () => emit('gazeTestLock'),
+}
+
+const tabsUi = {
+  list: 'w-full gap-1 rounded-xl p-1',
+  trigger: 'grow rounded-lg font-medium data-[state=active]:text-inverted',
+  indicator: 'rounded-lg',
+}
 
 function handleModalOpenChange(open: boolean) {
   if (!open) {
@@ -74,179 +101,99 @@ function handleModalOpenChange(open: boolean) {
 </script>
 
 <template>
+  <!-- 弹窗形态 -->
   <UModal
     v-if="!embedded"
     :open="visible"
     :close="false"
+    :ui="{ content: 'max-w-xl' }"
     @update:open="handleModalOpenChange"
   >
     <template #content>
-      <UCard :ui="{ header: 'p-0 sm:px-0', body: 'p-0 sm:p-0' }">
-        <template #header>
-          <div class="flex items-center gap-3 px-5 py-4">
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
-              <UIcon name="i-carbon-settings" class="h-5 w-5" />
-            </span>
-            <div class="min-w-0">
-              <p class="text-sm font-semibold text-highlighted leading-tight">
-                设置
-              </p>
-              <p class="text-xs text-muted leading-tight">
-                {{ activeTabMeta.label }}
-              </p>
-            </div>
-          </div>
-        </template>
+      <div class="flex max-h-[85vh] flex-col bg-default">
+        <header class="flex items-center gap-3 px-5 pb-4 pt-5">
+          <span class="flex size-9 items-center justify-center rounded-xl bg-primary text-inverted">
+            <UIcon name="i-carbon-settings" class="size-5" />
+          </span>
+          <h1 class="text-base font-semibold text-highlighted">
+            设置
+          </h1>
+        </header>
 
-        <UTabs
-          v-model="activeTabModel"
-          :items="tabItems"
-          variant="link"
-          :ui="{ list: 'px-5', content: '' }"
-        >
-          <template #content="{ item }">
-            <div class="p-5 space-y-4">
-              <CharacterSettings
-                v-if="item.value === 'character'"
-                :current-character-id="currentCharacterId"
-                :refresh-key="characterRefreshKey ?? 0"
-                @select="e => emit('characterSelect', e)"
-                @edit="e => emit('characterEdit', e)"
-                @delete="e => emit('characterDelete', e)"
-                @create="() => emit('characterCreate')"
-              />
+        <div class="px-5 pb-1">
+          <UTabs
+            v-model="activeTabModel"
+            :items="tabItems"
+            :content="false"
+            color="primary"
+            variant="pill"
+            size="sm"
+            :ui="tabsUi"
+          />
+        </div>
 
-              <OpenAISettings
-                v-else-if="item.value === 'openai'"
-                :api-key="apiKey"
-                :base-u-r-l="baseURL"
-                @update:api-key="v => emit('update:apiKey', v)"
-                @update:base-u-r-l="v => emit('update:baseURL', v)"
-              />
+        <main class="flex-1 overflow-auto px-5 py-4">
+          <SettingsBody v-bind="bodyProps" v-on="bodyHandlers" />
+        </main>
 
-              <RoastSettings
-                v-else-if="item.value === 'roast'"
-                :roast-config="roastConfig"
-                :is-roasting="isRoasting"
-                :current-roast="currentRoast"
-                :roast-history="roastHistory"
-                @toggle-auto="() => emit('roastToggleAuto')"
-                @set-interval="m => emit('roastSetInterval', m)"
-                @set-style="s => emit('roastSetStyle', s)"
-                @trigger="() => emit('roastTrigger')"
-                @clear-history="() => emit('roastClearHistory')"
-              />
-
-              <GazeSettings
-                v-else
-                :gaze-config="gazeAtUserConfig"
-                @update-config="cfg => emit('gazeUpdateConfig', cfg)"
-                @test-lock="() => emit('gazeTestLock')"
-              />
-            </div>
-          </template>
-        </UTabs>
-
-        <template #footer>
-          <div class="flex gap-2 justify-end px-5 py-3">
-            <UButton color="neutral" variant="ghost" @click="$emit('cancel')">
-              取消
-            </UButton>
-            <UButton color="primary" icon="i-carbon-checkmark" @click="$emit('save')">
-              保存
-            </UButton>
-          </div>
-        </template>
-      </UCard>
+        <footer class="flex items-center justify-end gap-2 border-t border-default px-5 py-4">
+          <UButton color="neutral" variant="ghost" size="lg" @click="$emit('cancel')">
+            取消
+          </UButton>
+          <UButton color="primary" size="lg" icon="i-carbon-checkmark" @click="$emit('save')">
+            保存
+          </UButton>
+        </footer>
+      </div>
     </template>
   </UModal>
 
+  <!-- 独立设置窗口形态 -->
   <div
     v-else-if="visible"
-    class="h-screen w-screen bg-default"
+    class="flex h-screen w-screen flex-col bg-default"
     @keydown.stop
     @keyup.stop
     @keypress.stop
   >
-    <UCard
-      class="rounded-none flex flex-col h-full w-full border-0"
-      :ui="{ header: 'p-0 sm:px-0', body: 'flex-1 overflow-auto p-0 sm:p-0', footer: 'mt-auto' }"
-    >
-      <template #header>
-        <div class="flex items-center gap-3 px-6 py-4 border-b border-default">
-          <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
-            <UIcon name="i-carbon-settings" class="h-5 w-5" />
-          </span>
-          <div class="min-w-0">
-            <p class="text-base font-semibold text-highlighted leading-tight">
-              NiNiSan 设置
-            </p>
-            <p class="text-xs text-muted leading-tight">
-              {{ activeTabMeta.label }}
-            </p>
-          </div>
-        </div>
-      </template>
+    <header class="flex items-center gap-3 px-6 pb-4 pt-5">
+      <span class="flex size-10 items-center justify-center rounded-xl bg-primary text-inverted">
+        <UIcon name="i-carbon-settings" class="size-5" />
+      </span>
+      <div class="min-w-0">
+        <h1 class="text-base font-semibold leading-tight text-highlighted">
+          NiNiSan 设置
+        </h1>
+        <p class="text-xs leading-tight text-muted">
+          个性化你的桌面伙伴
+        </p>
+      </div>
+    </header>
 
+    <div class="px-6 pb-1">
       <UTabs
         v-model="activeTabModel"
         :items="tabItems"
-        variant="link"
-        :ui="{ list: 'px-6', content: '' }"
-      >
-        <template #content="{ item }">
-          <div class="mx-auto w-full max-w-2xl p-6 space-y-4">
-            <CharacterSettings
-              v-if="item.value === 'character'"
-              :current-character-id="currentCharacterId"
-              :refresh-key="characterRefreshKey ?? 0"
-              @select="e => emit('characterSelect', e)"
-              @edit="e => emit('characterEdit', e)"
-              @delete="e => emit('characterDelete', e)"
-              @create="() => emit('characterCreate')"
-            />
+        :content="false"
+        color="primary"
+        variant="pill"
+        :ui="tabsUi"
+      />
+    </div>
 
-            <OpenAISettings
-              v-else-if="item.value === 'openai'"
-              :api-key="apiKey"
-              :base-u-r-l="baseURL"
-              @update:api-key="v => emit('update:apiKey', v)"
-              @update:base-u-r-l="v => emit('update:baseURL', v)"
-            />
+    <main class="flex-1 overflow-auto px-6 py-5">
+      <div class="mx-auto w-full max-w-2xl">
+        <SettingsBody v-bind="bodyProps" v-on="bodyHandlers" />
+      </div>
+    </main>
 
-            <RoastSettings
-              v-else-if="item.value === 'roast'"
-              :roast-config="roastConfig"
-              :is-roasting="isRoasting"
-              :current-roast="currentRoast"
-              :roast-history="roastHistory"
-              @toggle-auto="() => emit('roastToggleAuto')"
-              @set-interval="m => emit('roastSetInterval', m)"
-              @set-style="s => emit('roastSetStyle', s)"
-              @trigger="() => emit('roastTrigger')"
-              @clear-history="() => emit('roastClearHistory')"
-            />
-
-            <GazeSettings
-              v-else
-              :gaze-config="gazeAtUserConfig"
-              @update-config="cfg => emit('gazeUpdateConfig', cfg)"
-              @test-lock="() => emit('gazeTestLock')"
-            />
-          </div>
-        </template>
-      </UTabs>
-
-      <template #footer>
-        <div class="flex gap-2 justify-end px-6 py-3 border-t border-default">
-          <UButton color="neutral" variant="ghost" @click="$emit('cancel')">
-            {{ cancelLabel }}
-          </UButton>
-          <UButton color="primary" icon="i-carbon-checkmark" @click="$emit('save')">
-            保存
-          </UButton>
-        </div>
-      </template>
-    </UCard>
+    <footer class="flex items-center justify-end gap-2 border-t border-default px-6 py-4">
+      <UButton color="neutral" variant="ghost" size="lg" @click="$emit('cancel')">
+        {{ cancelLabel }}
+      </UButton>
+      <UButton color="primary" size="lg" icon="i-carbon-checkmark" @click="$emit('save')">
+        保存
+      </UButton>
+    </footer>
   </div>
 </template>

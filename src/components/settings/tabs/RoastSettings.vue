@@ -76,7 +76,7 @@ function updateStyle(value: unknown) {
       </UFormField>
     </div>
 
-    <div class="flex items-center gap-3 rounded-xl border border-default bg-elevated/40 p-4">
+    <div class="flex items-center gap-3 rounded-xl border border-default bg-elevated p-4">
       <UButton
         :loading="isRoasting"
         color="primary"
@@ -123,7 +123,7 @@ function updateStyle(value: unknown) {
         <div
           v-for="roast in roastHistory.slice(0, 5)"
           :key="roast.timestamp"
-          class="rounded-lg border border-default bg-elevated/40 p-3"
+          class="rounded-lg border border-default bg-elevated p-3"
         >
           <p class="text-sm text-default leading-relaxed">
             {{ roast.text }}

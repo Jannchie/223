@@ -19,6 +19,7 @@ declare module 'vue' {
     RoastSettings: typeof import('./src/components/settings/tabs/RoastSettings.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SettingsBody: typeof import('./src/components/settings/SettingsBody.vue')['default']
     SettingsPanel: typeof import('./src/components/settings/SettingsPanel.vue')['default']
     SimpleLive2DViewer: typeof import('./src/components/SimpleLive2DViewer.vue')['default']
     UAlert: typeof import('./node_modules/.pnpm/@nuxt+ui@4.9.0_796ed035be8a2158a0c079e25bddd92d/node_modules/@nuxt/ui/dist/runtime/components/Alert.vue')['default']

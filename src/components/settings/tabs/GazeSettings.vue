@@ -52,7 +52,7 @@ function updateRandomizeDuration(value: unknown) {
     <UFormField
       label="启用目光锁定"
       description="定时让角色看向你，增加陪伴感"
-      class="flex items-center justify-between rounded-xl border border-default bg-elevated/40 p-4"
+      class="flex items-center justify-between rounded-xl border border-default bg-elevated p-4"
     >
       <USwitch
         :model-value="gazeConfig.enabled"
