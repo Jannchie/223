@@ -3,7 +3,7 @@ import http from 'node:http'
 import path from 'node:path'
 // import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, protocol, screen, session, Tray } from 'electron'
+import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, Menu, nativeImage, protocol, safeStorage, screen, session, Tray } from 'electron'
 
 // const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -701,6 +701,96 @@ function stopScreenshotRoast() {
   }
 }
 
+// ---------- 应用配置持久化（本地文件 + 密钥加密）----------
+// 存储于 userData/config.json：非敏感字段明文，API Key 使用 safeStorage 加密
+
+interface StoredBackend {
+  id: string
+  name: string
+  baseURL: string
+  model: string
+  apiKeyEnc: string
+}
+
+interface BackendsState {
+  backends: Array<{ id: string, name: string, baseURL: string, model: string, apiKey: string }>
+  activeId: string
+}
+
+function getConfigPath(): string {
+  return path.join(app.getPath('userData'), 'config.json')
+}
+
+function encryptSecret(value: string): string {
+  if (!value) {
+    return ''
+  }
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      return `enc:${safeStorage.encryptString(value).toString('base64')}`
+    }
+  }
+  catch (error) {
+    console.error('加密 API Key 失败，退回明文存储:', error)
+  }
+  // 加密不可用（如部分 Linux 无密钥环）时退回明文
+  return `raw:${value}`
+}
+
+function decryptSecret(stored: string): string {
+  if (!stored) {
+    return ''
+  }
+  if (stored.startsWith('enc:')) {
+    try {
+      return safeStorage.decryptString(Buffer.from(stored.slice(4), 'base64'))
+    }
+    catch (error) {
+      console.error('解密 API Key 失败:', error)
+      return ''
+    }
+  }
+  if (stored.startsWith('raw:')) {
+    return stored.slice(4)
+  }
+  return stored
+}
+
+function loadBackendsConfig(): BackendsState {
+  try {
+    const raw = fs.readFileSync(getConfigPath(), 'utf-8')
+    const data = JSON.parse(raw) as { backends?: StoredBackend[], activeId?: string }
+    const backends = (data.backends ?? []).map(b => ({
+      id: b.id,
+      name: b.name,
+      baseURL: b.baseURL,
+      model: b.model,
+      apiKey: decryptSecret(b.apiKeyEnc ?? ''),
+    }))
+    return { backends, activeId: data.activeId ?? '' }
+  }
+  catch {
+    // 文件不存在或损坏时返回空状态，由渲染进程负责迁移/初始化
+    return { backends: [], activeId: '' }
+  }
+}
+
+function saveBackendsConfig(state: BackendsState): void {
+  const data = {
+    backends: (state.backends ?? []).map(b => ({
+      id: b.id,
+      name: b.name,
+      baseURL: b.baseURL,
+      model: b.model,
+      apiKeyEnc: encryptSecret(b.apiKey ?? ''),
+    })),
+    activeId: state.activeId ?? '',
+  }
+  const configPath = getConfigPath()
+  fs.mkdirSync(path.dirname(configPath), { recursive: true })
+  fs.writeFileSync(configPath, JSON.stringify(data, null, 2), 'utf-8')
+}
+
 // 设置 IPC 处理器
 function setupIpcHandlers() {
   // 手动截图
@@ -755,6 +845,33 @@ function setupIpcHandlers() {
   // 获取设置窗口状态
   ipcMain.handle('get-settings-window-status', () => {
     return settingsWin && !settingsWin.isDestroyed()
+  })
+
+  // 角色变更广播：转发给除发送方以外的所有窗口，实现跨窗口即时同步
+  ipcMain.on('character-changed', (event, payload) => {
+    for (const targetWindow of BrowserWindow.getAllWindows()) {
+      if (targetWindow.isDestroyed() || targetWindow.webContents.id === event.sender.id) {
+        continue
+      }
+      targetWindow.webContents.send('character-changed', payload)
+    }
+  })
+
+  // 读取后端配置（API Key 已解密）
+  ipcMain.handle('backends:load', () => {
+    return loadBackendsConfig()
+  })
+
+  // 保存后端配置（API Key 加密落盘）并广播给其他窗口
+  ipcMain.handle('backends:save', (event, state: BackendsState) => {
+    saveBackendsConfig(state)
+    for (const targetWindow of BrowserWindow.getAllWindows()) {
+      if (targetWindow.isDestroyed() || targetWindow.webContents.id === event.sender.id) {
+        continue
+      }
+      targetWindow.webContents.send('backends-changed', state)
+    }
+    return true
   })
 }
 

@@ -75,6 +75,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
   closeSettingsWindow: () => ipcRenderer.invoke('close-settings-window'),
 
   getSettingsWindowStatus: () => ipcRenderer.invoke('get-settings-window-status'),
+
+  // 角色变更跨窗口同步
+  notifyCharacterChanged: (payload: { id: string }) => ipcRenderer.send('character-changed', payload),
+
+  onCharacterChanged: (callback: (payload: { id: string }) => void) => {
+    ipcRenderer.on('character-changed', (_, payload) => callback(payload))
+  },
+
+  removeCharacterChangedListener: () => {
+    ipcRenderer.removeAllListeners('character-changed')
+  },
+
+  // 后端配置持久化（主进程本地文件 + 密钥加密）
+  loadBackends: () => ipcRenderer.invoke('backends:load'),
+
+  saveBackends: (state: unknown) => ipcRenderer.invoke('backends:save', state),
+
+  onBackendsChanged: (callback: (state: unknown) => void) => {
+    ipcRenderer.on('backends-changed', (_, state) => callback(state))
+  },
+
+  removeBackendsChangedListener: () => {
+    ipcRenderer.removeAllListeners('backends-changed')
+  },
 })
 
 contextBridge.exposeInMainWorld('ipcRenderer', {
