@@ -11,9 +11,17 @@
 
 ## 本项目的使用方式
 
-- 打包的字体为华为官方 **原始、未经修改的 TTF 文件**（`HarmonyOS_Sans_SC_Regular/Medium/Bold.ttf`）。
-- 已通过 SHA-256 校验，与官方分发文件字节一致，未做任何格式转换或修改，
-  以符合许可协议中「保持字体完整性、不得修改字体文件」的要求。
+- 打包的字体为华为官方 **原始、未经修改的 TTF 文件**（`HarmonyOS_Sans_SC_Regular/Medium/Bold.ttf`），
+  取自官方字体包 `https://developer.huawei.com/images/download/general/HarmonyOS-Sans.zip`，
+  未做任何格式转换或修改，以符合许可协议中「保持字体完整性、不得修改字体文件」的要求。
+- 官方包内附带的许可协议原文见同目录 `LICENSE.txt`。
+- 各文件 SHA-256 校验值（与官方包解压所得一致）：
+
+  | 文件 | SHA-256 |
+  | --- | --- |
+  | `HarmonyOS_Sans_SC_Regular.ttf` | `297b088424be212207df2ce8b98e335468b782aa6b96832af0b8b773d711e2b1` |
+  | `HarmonyOS_Sans_SC_Medium.ttf` | `6ed1553edccddc48eb27ff25d134a4a715cf54211238d4840b3038576cba1944` |
+  | `HarmonyOS_Sans_SC_Bold.ttf` | `43a424b85e47fb53a17b3b32026a71801f86f8e022ca6798d186b47d39fa5f01` |
 
 ## 许可要点（摘要，非完整条款）
 

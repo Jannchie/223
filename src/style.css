@@ -1,4 +1,10 @@
 @import "tailwindcss";
+@import "./styles/fonts.css";
+
+@theme {
+  --font-sans: 'HarmonyOS Sans SC', system-ui, -apple-system, "Segoe UI",
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+}
 
 /* =============================================================
  * NiNiSan 设计令牌（替代 @nuxt/ui）
@@ -132,10 +138,13 @@
 /* -------------------------------------------------------------
  * 基础样式
  * ------------------------------------------------------------- */
+html,
+body {
+  font-family: var(--font-sans);
+}
+
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC",
-    "Microsoft YaHei", sans-serif;
   color: var(--ui-text);
 }
 
