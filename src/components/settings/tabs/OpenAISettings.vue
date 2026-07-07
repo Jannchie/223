@@ -46,10 +46,10 @@ function update(field: 'name' | 'apiKey' | 'baseURL' | 'model', value: unknown) 
           v-for="backend in backends"
           :key="backend.id"
           type="button"
-          class="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors"
+          class="flex w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors"
           :class="backend.id === activeId
-            ? 'border-primary bg-muted'
-            : 'border-default hover:border-accented'"
+            ? 'border-primary bg-primary-soft'
+            : 'border-default hover:border-accented hover:bg-elevated'"
           @click="selectBackend(backend.id)"
         >
           <Icon
@@ -65,14 +65,14 @@ function update(field: 'name' | 'apiKey' | 'baseURL' | 'model', value: unknown) 
               {{ backend.baseURL || '默认地址' }}
             </p>
           </div>
-          <Badge v-if="backend.id === activeId" color="primary" variant="soft" size="sm">
+          <Badge v-if="backend.id === activeId" color="primary" variant="outline" size="sm">
             使用中
           </Badge>
         </button>
       </div>
     </div>
 
-    <div v-if="active" class="space-y-4 rounded-xl border border-default p-4">
+    <div v-if="active" class="space-y-4 rounded-2xl border border-default bg-elevated p-4">
       <div class="flex items-center justify-between">
         <p class="text-sm font-medium text-highlighted">
           编辑「{{ active.name || '未命名后端' }}」

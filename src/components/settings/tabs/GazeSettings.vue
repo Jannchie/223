@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { GazeAtUserConfig, GazeAtUserConfigUpdate } from '../../../composables/useGaze'
+import SettingsGroup from '../SettingsGroup.vue'
+import SettingsRow from '../SettingsRow.vue'
 
 defineProps<{ gazeConfig: GazeAtUserConfig }>()
 const emit = defineEmits<{ (e: 'updateConfig', cfg: GazeAtUserConfigUpdate): void, (e: 'testLock'): void }>()
@@ -48,20 +50,24 @@ function updateRandomizeDuration(value: unknown) {
 </script>
 
 <template>
-  <div class="space-y-5">
-    <FormField
-      label="启用目光锁定"
-      description="定时让角色看向你，增加陪伴感"
-      class="flex items-center justify-between rounded-xl border border-default bg-elevated p-4"
-    >
-      <Switch
-        :model-value="gazeConfig.enabled"
-        @update:model-value="updateEnabled"
-      />
-    </FormField>
+  <div class="space-y-4">
+    <!-- 总开关 -->
+    <SettingsGroup>
+      <SettingsRow
+        icon="i-carbon-view"
+        label="启用目光锁定"
+        description="定时让角色看向你，增加陪伴感"
+      >
+        <Switch
+          :model-value="gazeConfig.enabled"
+          @update:model-value="updateEnabled"
+        />
+      </SettingsRow>
+    </SettingsGroup>
 
-    <div class="rounded-xl border border-default divide-y divide-default">
-      <FormField label="锁定间隔" class="flex items-center justify-between gap-4 p-4">
+    <!-- 细节配置 -->
+    <SettingsGroup :dimmed="!gazeConfig.enabled">
+      <SettingsRow label="锁定间隔" description="每隔多久看你一次">
         <Select
           :model-value="gazeConfig.intervalMinutes"
           :items="intervalOptions"
@@ -69,9 +75,9 @@ function updateRandomizeDuration(value: unknown) {
           class="min-w-32"
           @update:model-value="updateIntervalMinutes"
         />
-      </FormField>
+      </SettingsRow>
 
-      <FormField label="锁定时长" class="flex items-center justify-between gap-4 p-4">
+      <SettingsRow label="锁定时长" description="每次注视持续多久">
         <Select
           :model-value="gazeConfig.lockDurationSeconds"
           :items="durationOptions"
@@ -79,32 +85,24 @@ function updateRandomizeDuration(value: unknown) {
           class="min-w-32"
           @update:model-value="updateLockDurationSeconds"
         />
-      </FormField>
+      </SettingsRow>
 
-      <FormField
-        label="间隔随机化"
-        description="在基准值 50%-150% 范围内随机"
-        class="flex items-center justify-between gap-4 p-4"
-      >
+      <SettingsRow label="间隔随机化" description="在基准值 50%-150% 范围内随机">
         <Switch
           :model-value="gazeConfig.randomizeInterval"
           :disabled="!gazeConfig.enabled"
           @update:model-value="updateRandomizeInterval"
         />
-      </FormField>
+      </SettingsRow>
 
-      <FormField
-        label="时长随机化"
-        description="在基准值 70%-130% 范围内随机"
-        class="flex items-center justify-between gap-4 p-4"
-      >
+      <SettingsRow label="时长随机化" description="在基准值 70%-130% 范围内随机">
         <Switch
           :model-value="gazeConfig.randomizeDuration"
           :disabled="!gazeConfig.enabled"
           @update:model-value="updateRandomizeDuration"
         />
-      </FormField>
-    </div>
+      </SettingsRow>
+    </SettingsGroup>
 
     <Button
       :disabled="!gazeConfig.enabled"

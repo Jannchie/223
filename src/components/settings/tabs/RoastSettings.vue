@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { RoastStyle } from '../../../utils/screenshot-prompts'
 import type { RoastResult, ScreenshotRoastConfig } from '../../../utils/screenshot-roast'
+import SettingsGroup from '../SettingsGroup.vue'
+import SettingsRow from '../SettingsRow.vue'
 
 defineProps<{
   roastConfig: ScreenshotRoastConfig
@@ -40,23 +42,35 @@ function updateInterval(value: unknown) {
 function updateStyle(value: unknown) {
   emit('setStyle', value as RoastStyle)
 }
+
+function formatTime(timestamp: number) {
+  return new Date(timestamp).toLocaleString()
+}
 </script>
 
 <template>
-  <div class="space-y-5">
-    <div class="rounded-xl border border-default divide-y divide-default">
-      <FormField
+  <div class="space-y-4">
+    <!-- 总开关 -->
+    <SettingsGroup>
+      <SettingsRow
+        icon="i-carbon-camera"
         label="自动吐槽"
         description="按设定间隔自动截图并生成吐槽"
-        class="flex items-center justify-between p-4"
       >
         <Switch
           :model-value="roastConfig.enabled"
           @update:model-value="() => emit('toggleAuto')"
         />
-      </FormField>
+      </SettingsRow>
+    </SettingsGroup>
 
-      <FormField label="吐槽间隔" class="flex items-center justify-between gap-4 p-4">
+    <!-- 细节配置 -->
+    <SettingsGroup>
+      <SettingsRow
+        label="吐槽间隔"
+        description="自动吐槽的触发频率"
+        :dimmed="!roastConfig.enabled"
+      >
         <Select
           :model-value="roastConfig.interval"
           :items="intervalOptions"
@@ -64,46 +78,55 @@ function updateStyle(value: unknown) {
           class="min-w-32"
           @update:model-value="updateInterval"
         />
-      </FormField>
+      </SettingsRow>
 
-      <FormField label="吐槽风格" class="flex items-center justify-between gap-4 p-4">
+      <SettingsRow label="吐槽风格" description="同时作用于自动与手动吐槽">
         <Select
           :model-value="roastConfig.style"
           :items="styleOptions"
           class="min-w-44"
           @update:model-value="updateStyle"
         />
-      </FormField>
-    </div>
+      </SettingsRow>
+    </SettingsGroup>
 
-    <div class="flex items-center gap-3 rounded-xl border border-default bg-elevated p-4">
-      <Button
-        :loading="isRoasting"
-        color="primary"
-        icon="i-carbon-camera"
-        @click="emit('trigger')"
-      >
-        {{ isRoasting ? '正在吐槽...' : '立即吐槽' }}
-      </Button>
-      <div class="ml-auto flex items-center gap-2 text-sm text-muted">
-        <span>快捷键</span>
-        <Kbd value="F7" />
+    <!-- 手动触发 -->
+    <SettingsGroup>
+      <div class="flex items-center gap-3 p-4">
+        <Button
+          :loading="isRoasting"
+          color="primary"
+          icon="i-carbon-camera"
+          @click="emit('trigger')"
+        >
+          {{ isRoasting ? '正在吐槽...' : '立即吐槽' }}
+        </Button>
+        <div class="ml-auto flex items-center gap-2 text-sm text-muted">
+          <span>快捷键</span>
+          <Kbd value="F7" />
+        </div>
       </div>
-    </div>
+    </SettingsGroup>
 
-    <Alert
-      v-if="currentRoast"
-      icon="i-carbon-chat"
-      title="最新吐槽"
-      :description="currentRoast.text"
-      color="warning"
-      variant="soft"
-    >
-      <template #actions>
-        <span class="text-xs text-muted">{{ new Date(currentRoast.timestamp).toLocaleString() }}</span>
-      </template>
-    </Alert>
+    <!-- 最新吐槽 -->
+    <SettingsGroup v-if="currentRoast">
+      <div class="p-4">
+        <div class="mb-2 flex items-center gap-2">
+          <Icon name="i-carbon-chat" class="size-4 text-primary" />
+          <p class="text-sm font-medium text-highlighted">
+            最新吐槽
+          </p>
+          <span class="ml-auto text-xs text-dimmed">
+            {{ formatTime(currentRoast.timestamp) }}
+          </span>
+        </div>
+        <p class="text-sm leading-relaxed text-default">
+          {{ currentRoast.text }}
+        </p>
+      </div>
+    </SettingsGroup>
 
+    <!-- 历史 -->
     <div v-if="roastHistory.length > 0" class="space-y-2">
       <div class="flex items-center justify-between px-1">
         <p class="text-sm font-medium text-highlighted">
@@ -123,13 +146,13 @@ function updateStyle(value: unknown) {
         <div
           v-for="roast in roastHistory.slice(0, 5)"
           :key="roast.timestamp"
-          class="rounded-lg border border-default bg-elevated p-3"
+          class="rounded-xl border border-default bg-elevated p-3"
         >
-          <p class="text-sm text-default leading-relaxed">
+          <p class="text-sm leading-relaxed text-default">
             {{ roast.text }}
           </p>
-          <p class="mt-1.5 text-xs text-muted">
-            {{ new Date(roast.timestamp).toLocaleString() }}
+          <p class="mt-1.5 text-xs text-dimmed">
+            {{ formatTime(roast.timestamp) }}
           </p>
         </div>
       </div>

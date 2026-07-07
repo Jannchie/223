@@ -116,6 +116,7 @@
 @utility bg-elevated { background-color: var(--ui-bg-elevated); }
 @utility bg-muted { background-color: var(--ui-bg-muted); }
 @utility bg-primary { background-color: var(--ui-primary); }
+@utility bg-primary-soft { background-color: var(--ui-primary-soft); }
 @utility bg-inverted { background-color: var(--ui-bg-inverted); }
 
 @utility text-default { color: var(--ui-text); }
@@ -130,7 +131,8 @@
 @utility border-accented { border-color: var(--ui-border-accented); }
 
 @utility divide-default {
-  & > :not([hidden]) ~ :not([hidden]) {
+  /* 与 Tailwind v4 的 divide-y（border 加在 :not(:last-child) 上）保持同一选择器 */
+  & > :not(:last-child) {
     border-color: var(--ui-border);
   }
 }
@@ -138,6 +140,17 @@
 /* -------------------------------------------------------------
  * 基础样式
  * ------------------------------------------------------------- */
+
+/* Tailwind v4 的 preflight 把未指定颜色的边框回退到 currentColor（文字色），
+ * 漏写 border-* 颜色类时会出现深色边框。这里恢复 v3 行为：默认边框统一用设计令牌。 */
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--ui-border);
+  }
+}
+
 html,
 body {
   font-family: var(--font-sans);
