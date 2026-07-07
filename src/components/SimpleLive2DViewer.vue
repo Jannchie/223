@@ -163,6 +163,11 @@ const editingCharacter = ref<Character | null>(null)
 const characterEditorMode = ref<'create' | 'edit'>('create')
 const characterListRefreshKey = ref(0)
 
+// 跨窗口角色同步：记录当前已加载的模型路径，避免仅改人设时重复加载模型
+let loadedModelPath: string | null = null
+// 应用来自其他窗口的角色变更时置位，避免广播回环
+const isApplyingRemoteCharacterChange = ref(false)
+
 // 截图吐槽相关状态
 const screenshotRoastManager = ref<ScreenshotRoastManager | null>(null)
 const roastHistoryManager = new RoastHistoryManager()
@@ -1245,12 +1250,45 @@ async function handleCharacterEditorDelete(character: Character) {
   await handleCharacterDelete(character)
 }
 
+// 通过主进程广播角色变更到其他窗口（比 localStorage storage 事件更可靠）
+function broadcastCharacterChange(id: string) {
+  if (isApplyingRemoteCharacterChange.value) {
+    return
+  }
+  const api = (globalThis as any).electronAPI
+  if (api?.notifyCharacterChanged) {
+    api.notifyCharacterChanged({ id: String(id) })
+  }
+}
+
+// 应用来自其他窗口的角色变更
+async function applyRemoteCharacterChange(id: string) {
+  if (!id) {
+    return
+  }
+  isApplyingRemoteCharacterChange.value = true
+  try {
+    const next = await characterService.getCharacter(String(id))
+    if (next) {
+      await switchCharacter(next)
+    }
+  }
+  catch (error) {
+    console.error('应用远程角色变更失败:', error)
+  }
+  finally {
+    isApplyingRemoteCharacterChange.value = false
+  }
+}
+
 // 切换角色
 async function switchCharacter(character: Character) {
   try {
     if (isSettingsWindow.value) {
       await characterService.setCurrentCharacter(character.id)
       currentCharacter.value = character
+      // 通知主窗口即时应用最新人设/模型
+      broadcastCharacterChange(character.id)
       return
     }
     // 更新聊天组合式中的当前角色，确保对话使用最新人设
@@ -1261,13 +1299,16 @@ async function switchCharacter(character: Character) {
 
     console.log('保存角色选择:', character.name, 'ID:', character.id.toString())
 
-    // 重新加载 Live2D 模型
-    if (character.modelPath) {
+    // 仅在模型路径变化时重新加载 Live2D 模型，避免仅改人设时的无谓闪烁
+    if (character.modelPath && character.modelPath !== loadedModelPath) {
       await loadLive2DModel(character.modelPath)
     }
 
     // 重新初始化聊天服务以使用新的角色设定
     initializeChatService()
+
+    // 通知其他窗口（如设置窗口）保持角色选择同步
+    broadcastCharacterChange(character.id)
 
     showTemporaryBubble(`已切换到角色 "${character.name}"`)
   }
@@ -1286,6 +1327,7 @@ async function loadLive2DModel(modelPath: string) {
     await loadModelFromURL(modelURL)
     model = modelRef.value as unknown as Live2DModel | null
     isLive2DModelLoaded.value = !!model
+    loadedModelPath = modelPath
     // 重新计算输入框位置
     calculateInputPosition()
   }
@@ -1550,7 +1592,16 @@ onMounted(async () => {
   }
 
   window.addEventListener('resize', handleResize)
-  globalThis.addEventListener('storage', handleStorageChange)
+
+  // 跨窗口角色同步：优先使用主进程 IPC 广播（可靠），否则回退到 storage 事件
+  if ((globalThis as any).electronAPI?.onCharacterChanged) {
+    (globalThis as any).electronAPI.onCharacterChanged((payload: { id: string }) => {
+      void applyRemoteCharacterChange(payload.id)
+    })
+  }
+  else {
+    globalThis.addEventListener('storage', handleStorageChange)
+  }
 
   // 只在设置面板显示时监听全局鼠标事件
   const watchSettings = () => {
@@ -1593,6 +1644,7 @@ onMounted(async () => {
       await loadModelFromURL(modelURL)
       model = modelRef.value as unknown as Live2DModel | null
       isLive2DModelLoaded.value = !!model
+      loadedModelPath = modelPath
       break
     }
     catch (error) {
@@ -1710,6 +1762,11 @@ onMounted(async () => {
 onUnmounted(() => {
   if ((globalThis as any).electronAPI && (globalThis as any).electronAPI.removeMousePositionListener) {
     (globalThis as any).electronAPI.removeMousePositionListener()
+  }
+
+  // 清理角色变更监听
+  if ((globalThis as any).electronAPI?.removeCharacterChangedListener) {
+    (globalThis as any).electronAPI.removeCharacterChangedListener()
   }
 
   // 清理截图监听器
@@ -1968,12 +2025,7 @@ onUnmounted(() => {
   -webkit-app-region: no-drag;
   pointer-events: none;
   opacity: 0;
-  transform: translateY(6px);
-  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1), transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.input-container.input-visible {
-  transform: translateY(0);
+  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .input-container.input-visible {
@@ -2004,23 +2056,18 @@ onUnmounted(() => {
 :deep(.text-input [data-slot="base"]) {
   padding: 12px 18px;
   width: 100%;
-  border: 1px solid color-mix(in oklab, var(--ui-border) 70%, transparent);
+  border: 1px solid var(--ui-border);
   border-radius: 16px;
   font-size: 14px;
   line-height: 1.5;
-  background: color-mix(in oklab, var(--ui-bg-elevated) 82%, transparent);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  background: var(--ui-bg-elevated);
   color: var(--ui-text);
   caret-color: var(--ui-primary);
   outline: none;
-  box-shadow:
-    0 10px 30px -12px color-mix(in oklab, var(--ui-text) 30%, transparent),
-    0 1px 0 0 color-mix(in oklab, var(--ui-bg) 60%, transparent) inset;
   -webkit-app-region: no-drag;
   pointer-events: auto;
   box-sizing: border-box;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  transition: border-color 0.2s ease, background 0.2s ease;
 }
 
 :deep(.text-input [data-slot="base"]::placeholder) {
@@ -2028,15 +2075,12 @@ onUnmounted(() => {
 }
 
 :deep(.text-input [data-slot="base"]:focus) {
-  border-color: color-mix(in oklab, var(--ui-primary) 60%, transparent);
-  box-shadow:
-    0 0 0 3px color-mix(in oklab, var(--ui-primary) 22%, transparent),
-    0 12px 32px -12px color-mix(in oklab, var(--ui-primary) 45%, transparent);
-  background: color-mix(in oklab, var(--ui-bg-elevated) 92%, transparent);
+  border-color: var(--ui-primary);
+  background: var(--ui-bg-elevated);
 }
 
 :deep(.text-input [data-slot="base"]:disabled) {
-  background: color-mix(in oklab, var(--ui-bg-muted) 70%, transparent);
+  background: var(--ui-bg-muted);
   cursor: not-allowed;
 }
 
@@ -2047,22 +2091,16 @@ onUnmounted(() => {
   align-items: center;
   padding: 4px;
   border-radius: 14px;
-  background: color-mix(in oklab, var(--ui-bg-elevated) 78%, transparent);
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-  border: 1px solid color-mix(in oklab, var(--ui-border) 60%, transparent);
-  box-shadow: 0 8px 24px -12px color-mix(in oklab, var(--ui-text) 30%, transparent);
-  transition: background 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, padding 0.2s ease;
+  background: var(--ui-bg-elevated);
+  border: 1px solid var(--ui-border);
+  transition: background 0.2s ease, border-color 0.2s ease, padding 0.2s ease;
 }
 
-/* Pin 状态下只剩单个按钮，去除容器多余的玻璃背景 */
+/* Pin 状态下只剩单个按钮，去除容器多余的背景 */
 .button-container.pinned {
   padding: 0;
   background: transparent;
   border-color: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
 }
 
 /* Pin 按钮样式 */
@@ -2081,20 +2119,19 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  transition: background 0.18s ease, color 0.18s ease;
   -webkit-app-region: no-drag;
   pointer-events: auto;
 }
 
 .pin-button:hover,
 .settings-button:hover {
-  background: color-mix(in oklab, var(--ui-primary) 14%, transparent);
+  background: color-mix(in oklab, var(--ui-primary) 12%, var(--ui-bg-elevated));
   color: var(--ui-primary);
-  transform: translateY(-1px);
 }
 
 .pin-button.pinned {
-  background: color-mix(in oklab, var(--ui-error) 92%, transparent);
+  background: var(--ui-error);
   color: var(--ui-text-inverted);
 }
 
@@ -2117,10 +2154,8 @@ onUnmounted(() => {
 
 .bubble-content {
   animation: bubbleIn 0.32s cubic-bezier(0.16, 1, 0.3, 1);
-  background: color-mix(in oklab, var(--ui-bg-elevated) 88%, transparent);
-  backdrop-filter: blur(18px) saturate(1.5);
-  -webkit-backdrop-filter: blur(18px) saturate(1.5);
-  border: 1px solid color-mix(in oklab, var(--ui-border) 65%, transparent);
+  background: var(--ui-bg-elevated);
+  border: 1px solid var(--ui-border);
   border-radius: 20px;
   padding: 12px 18px;
   font-size: 14px;
@@ -2129,9 +2164,6 @@ onUnmounted(() => {
   word-wrap: break-word;
   white-space: pre-wrap;
   position: relative;
-  box-shadow:
-    0 16px 40px -16px color-mix(in oklab, var(--ui-text) 35%, transparent),
-    0 2px 6px -2px color-mix(in oklab, var(--ui-text) 15%, transparent);
 }
 
 .bubble-arrow {
@@ -2141,22 +2173,20 @@ onUnmounted(() => {
   transform: translateX(-50%) rotate(45deg);
   width: 14px;
   height: 14px;
-  background: color-mix(in oklab, var(--ui-bg-elevated) 88%, transparent);
-  backdrop-filter: blur(18px) saturate(1.5);
-  -webkit-backdrop-filter: blur(18px) saturate(1.5);
-  border-right: 1px solid color-mix(in oklab, var(--ui-border) 65%, transparent);
-  border-bottom: 1px solid color-mix(in oklab, var(--ui-border) 65%, transparent);
+  background: var(--ui-bg-elevated);
+  border-right: 1px solid var(--ui-border);
+  border-bottom: 1px solid var(--ui-border);
   border-bottom-right-radius: 4px;
 }
 
 @keyframes bubbleIn {
   from {
     opacity: 0;
-    transform: translateY(6px) scale(0.96);
+    transform: scale(0.96);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: scale(1);
   }
 }
 
@@ -2174,10 +2204,8 @@ onUnmounted(() => {
 
 .roast-bubble-content {
   animation: bubbleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  background: color-mix(in oklab, var(--ui-color-warning-500) 14%, var(--ui-bg-elevated));
-  backdrop-filter: blur(18px) saturate(1.5);
-  -webkit-backdrop-filter: blur(18px) saturate(1.5);
-  border: 1px solid color-mix(in oklab, var(--ui-color-warning-400) 35%, transparent);
+  background: color-mix(in oklab, var(--ui-color-warning-500) 16%, var(--ui-bg-elevated));
+  border: 1px solid color-mix(in oklab, var(--ui-color-warning-500) 40%, var(--ui-border));
   border-radius: 20px;
   padding: 12px 18px;
   font-size: 14px;
@@ -2186,9 +2214,6 @@ onUnmounted(() => {
   word-wrap: break-word;
   white-space: pre-wrap;
   position: relative;
-  box-shadow:
-    0 16px 40px -16px color-mix(in oklab, var(--ui-color-warning-500) 40%, transparent),
-    0 2px 6px -2px color-mix(in oklab, var(--ui-text) 15%, transparent);
 }
 
 .roast-bubble-arrow {
@@ -2198,11 +2223,9 @@ onUnmounted(() => {
   transform: translateX(-50%) rotate(45deg);
   width: 14px;
   height: 14px;
-  background: color-mix(in oklab, var(--ui-color-warning-500) 14%, var(--ui-bg-elevated));
-  backdrop-filter: blur(18px) saturate(1.5);
-  -webkit-backdrop-filter: blur(18px) saturate(1.5);
-  border-right: 1px solid color-mix(in oklab, var(--ui-color-warning-400) 35%, transparent);
-  border-bottom: 1px solid color-mix(in oklab, var(--ui-color-warning-400) 35%, transparent);
+  background: color-mix(in oklab, var(--ui-color-warning-500) 16%, var(--ui-bg-elevated));
+  border-right: 1px solid color-mix(in oklab, var(--ui-color-warning-500) 40%, var(--ui-border));
+  border-bottom: 1px solid color-mix(in oklab, var(--ui-color-warning-500) 40%, var(--ui-border));
   border-bottom-right-radius: 4px;
 }
 
@@ -2215,14 +2238,11 @@ onUnmounted(() => {
   justify-content: center;
   gap: 8px;
   padding: 8px 16px;
-  background: color-mix(in oklab, var(--ui-bg-inverted) 90%, transparent);
+  background: var(--ui-bg-inverted);
   color: var(--ui-text-inverted);
   border-radius: 999px;
   font-size: 13px;
   font-weight: 500;
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
-  box-shadow: 0 10px 30px -12px color-mix(in oklab, var(--ui-text) 45%, transparent);
   pointer-events: none;
   -webkit-app-region: no-drag;
   animation: fadeInOut 0.3s ease-in-out;
