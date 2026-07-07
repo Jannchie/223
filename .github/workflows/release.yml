@@ -1,0 +1,36 @@
+name: Release
+
+# 推送形如 v0.1.0 的 tag 时触发构建并发布到 GitHub Releases
+on:
+  push:
+    tags:
+      - 'v*'
+
+# 允许默认 GITHUB_TOKEN 创建 Release 并上传产物
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and publish
+        run: pnpm release
+        env:
+          # electron-builder 用它发布 Release；同仓库发布用内置 token 即可
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

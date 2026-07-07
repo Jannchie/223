@@ -1,16 +1,17 @@
 {
   "name": "ninisan",
   "type": "module",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.26.2+sha512.0e308ff2005fc7410366f154f625f6631ab2b16b1d2e70238444dd6ae9d630a8482d92a451144debc492416896ed16f7b114a86ec68b8404b2443869e68ffda6",
   "description": "NiNiSan desktop pet.",
   "author": "NiNiSan Team",
-  "homepage": "https://github.com/ninisan/desktop-pet",
+  "homepage": "https://github.com/Jannchie/223",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc && vite build && electron-builder",
+    "build": "vue-tsc && vite build && electron-builder --publish never",
+    "release": "vue-tsc && vite build && electron-builder --win --publish always",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -25,6 +26,7 @@
     "@vueuse/core": "^14.3.0",
     "ai": "^7.0.16",
     "dexie": "^4.4.4",
+    "electron-updater": "^6.8.9",
     "openai": "^6.45.0",
     "path-browserify": "^1.0.1",
     "pixi.js": "^8.19.0",
